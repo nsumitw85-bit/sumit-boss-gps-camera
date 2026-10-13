@@ -1,0 +1,9 @@
+{
+  "name": "Sumit Boss",
+  "description": "Sumit Boss - GPS Map Camera and Worker Documentation Android App. Capture location-stamped photos with worker details, accurate GPS, reverse geocoded addresses, and PDF reports.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
