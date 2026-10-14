@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   Compass,
   Settings as SettingsIcon,
+  Loader2,
 } from 'lucide-react';
 import {
   Language,
@@ -37,6 +38,13 @@ import { dbService } from '../services/db';
 import { voiceService } from '../services/tts';
 import { wardBoundaryService } from '../services/wardBoundaryService';
 import { formatTime12Hour, formatDateString } from '../utils/timeFormat';
+import { PhotoExportService } from '../services/photoExportService';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+
+// Alias for FileSystemDirectory.Directory.Documents compatibility
+const FileSystemDirectory = {
+  Directory,
+};
 
 interface CameraViewProps {
   language: Language;
@@ -100,6 +108,9 @@ export const CameraView: React.FC<CameraViewProps> = ({
   const [showAccuracyDialog, setShowAccuracyDialog] = useState<boolean>(false);
   const [capturedPhotoResult, setCapturedPhotoResult] = useState<CapturedPhoto | null>(null);
   const [showConfigDrawer, setShowConfigDrawer] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportAction, setExportAction] = useState<'download' | 'share' | null>(null);
+  const [exportFeedback, setExportFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Manual ward override toggle (default false: rely on live GPS point-in-polygon)
   const [isManualWardOverride, setIsManualWardOverride] = useState<boolean>(false);
@@ -381,6 +392,13 @@ export const CameraView: React.FC<CameraViewProps> = ({
       await dbService.savePhoto(newPhoto);
       onPhotoSaved();
 
+      // If enabled in settings, auto-save final GPS-stamped photo blob to device storage
+      if (settings.saveStampedPhoto) {
+        saveStampedPhotoBlobToDevice(stampedDataUrl, filename).catch((err) => {
+          console.debug('Background storage save notice:', err);
+        });
+      }
+
       voiceService.announceEvent('photo_captured', language);
       voiceService.announceEvent('photo_saved', language);
 
@@ -392,37 +410,142 @@ export const CameraView: React.FC<CameraViewProps> = ({
     }
   };
 
-  const handleDownload = (photo: CapturedPhoto) => {
-    const a = document.createElement('a');
-    a.href = photo.stampedDataUrl;
-    a.download = photo.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  /**
+   * Saves the final GPS-stamped photo blob directly to the device's Pictures directory
+   * using MediaStore and @capacitor/filesystem (Directory.Documents).
+   */
+  const saveStampedPhotoBlobToDevice = async (
+    stampedDataUrl: string,
+    filename: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const safeFilename = filename.endsWith('.jpg') || filename.endsWith('.jpeg')
+      ? filename
+      : `${filename}.jpg`;
+
+    const commaIndex = stampedDataUrl.indexOf(',');
+    const base64Data = commaIndex >= 0 ? stampedDataUrl.substring(commaIndex + 1) : stampedDataUrl;
+
+    // Create binary JPEG Blob from base64 string
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const photoBlob = new Blob([new Uint8Array(byteNumbers)], { type: 'image/jpeg' });
+
+    let mediaStoreSuccess = false;
+    let filesystemSuccess = false;
+    let lastError: Error | null = null;
+
+    // 1. Save directly to device's Pictures directory using MediaStore
+    try {
+      const mediaStoreRes = await PhotoExportService.savePhotoToDevice(stampedDataUrl, safeFilename);
+      if (mediaStoreRes.success) {
+        mediaStoreSuccess = true;
+      }
+    } catch (msErr) {
+      console.warn('MediaStore Pictures save attempt error:', msErr);
+      lastError = msErr as Error;
+    }
+
+    // 2. Save directly using @capacitor/filesystem with FileSystemDirectory.Directory.Documents
+    try {
+      await Filesystem.writeFile({
+        path: `Pictures/SUMIT_BOSS/${safeFilename}`,
+        data: base64Data,
+        directory: FileSystemDirectory.Directory.Documents,
+        recursive: true,
+      });
+      filesystemSuccess = true;
+    } catch {
+      try {
+        await Filesystem.writeFile({
+          path: safeFilename,
+          data: base64Data,
+          directory: Directory.Documents,
+          recursive: true,
+        });
+        filesystemSuccess = true;
+      } catch (fsErr) {
+        console.warn('Filesystem Directory.Documents save error:', fsErr);
+        if (!mediaStoreSuccess) {
+          lastError = fsErr as Error;
+        }
+      }
+    }
+
+    // 3. Fallback for Web/Browser when running outside native Android
+    if (!mediaStoreSuccess && !filesystemSuccess) {
+      try {
+        const blobUrl = URL.createObjectURL(photoBlob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = safeFilename;
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+          document.body.removeChild(link);
+          URL.revokeObjectURL(blobUrl);
+        }, 1000);
+        return {
+          success: true,
+          message: 'Photo saved successfully to Gallery.',
+        };
+      } catch (webErr) {
+        console.error('Web download failed:', webErr);
+        throw lastError || new Error('Failed to save photo to device storage.');
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Photo saved successfully to Gallery.',
+    };
+  };
+
+  const handleDownload = async (photo: CapturedPhoto) => {
+    if (isExporting) return;
+    try {
+      setIsExporting(true);
+      setExportAction('download');
+      setExportFeedback(null);
+      const res = await saveStampedPhotoBlobToDevice(photo.stampedDataUrl, photo.filename);
+      setExportFeedback({
+        type: 'success',
+        message: res.message || 'Photo saved successfully to Gallery.',
+      });
+    } catch (err) {
+      console.error('Download error:', err);
+      setExportFeedback({
+        type: 'error',
+        message: (err as Error)?.message || 'Failed to save photo to Gallery.',
+      });
+    } finally {
+      setIsExporting(false);
+      setExportAction(null);
+    }
   };
 
   const handleShare = async (photo: CapturedPhoto) => {
+    if (isExporting) return;
     try {
-      const res = await fetch(photo.stampedDataUrl);
-      const blob = await res.blob();
-      const file = new File([blob], photo.filename, { type: 'image/jpeg' });
-
-      // Share only the photo file without any text/caption or title
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-        });
-      } else if (navigator.share) {
-        await navigator.share({
-          files: [file],
-        });
-      } else {
-        handleDownload(photo);
-      }
+      setIsExporting(true);
+      setExportAction('share');
+      setExportFeedback(null);
+      const res = await PhotoExportService.sharePhotoToWhatsApp(photo.stampedDataUrl, photo.filename);
+      setExportFeedback({
+        type: 'success',
+        message: res.message || 'Opening WhatsApp...',
+      });
     } catch (err) {
-      if ((err as Error)?.name !== 'AbortError') {
-        console.warn('Share dismissed or unsupported:', err);
-      }
+      console.error('Share error:', err);
+      setExportFeedback({
+        type: 'error',
+        message: (err as Error)?.message || 'Failed to share photo to WhatsApp.',
+      });
+    } finally {
+      setIsExporting(false);
+      setExportAction(null);
     }
   };
 
@@ -827,14 +950,17 @@ export const CameraView: React.FC<CameraViewProps> = ({
               <span className="font-bold text-sm">Location Stamped Photo Saved!</span>
             </div>
             <button
-              onClick={() => setCapturedPhotoResult(null)}
+              onClick={() => {
+                setCapturedPhotoResult(null);
+                setExportFeedback(null);
+              }}
               className="p-1 rounded-lg text-slate-400 hover:text-white"
             >
               <X className="w-6 h-6" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-auto rounded-xl border border-slate-800 bg-slate-950 flex items-center justify-center p-1">
+          <div className="flex-1 overflow-auto rounded-xl border border-slate-800 bg-slate-950 flex items-center justify-center p-1 relative">
             <img
               src={capturedPhotoResult.stampedDataUrl}
               alt="Stamped Capture"
@@ -842,24 +968,90 @@ export const CameraView: React.FC<CameraViewProps> = ({
             />
           </div>
 
+          {/* Feedback banner (Success or Error with Retry) */}
+          {exportFeedback && (
+            <div
+              className={`mt-2 p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 animate-fade-in ${
+                exportFeedback.type === 'success'
+                  ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+                  : 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {exportFeedback.type === 'success' ? (
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                )}
+                <span className="truncate">{exportFeedback.message}</span>
+              </div>
+              {exportFeedback.type === 'error' && (
+                <button
+                  onClick={() => {
+                    if (exportAction === 'share') {
+                      handleShare(capturedPhotoResult);
+                    } else {
+                      handleDownload(capturedPhotoResult);
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               onClick={() => handleDownload(capturedPhotoResult)}
-              className="py-2.5 bg-blue-600 hover:bg-blue-500 font-bold text-white rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
+              disabled={isExporting}
+              className={`py-2.5 font-bold text-white rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors ${
+                isExporting && exportAction === 'download'
+                  ? 'bg-blue-700 opacity-80 cursor-wait'
+                  : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'
+              }`}
             >
-              <Download className="w-4 h-4" />
-              <span>Download</span>
+              {isExporting && exportAction === 'download' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>Download</span>
+                </>
+              )}
             </button>
             <button
               onClick={() => handleShare(capturedPhotoResult)}
-              className="py-2.5 bg-emerald-600 hover:bg-emerald-500 font-bold text-white rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
+              disabled={isExporting}
+              className={`py-2.5 font-bold text-white rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors ${
+                isExporting && exportAction === 'share'
+                  ? 'bg-emerald-700 opacity-80 cursor-wait'
+                  : 'bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50'
+              }`}
             >
-              <Share2 className="w-4 h-4" />
-              <span>Share (WhatsApp)</span>
+              {isExporting && exportAction === 'share' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Sharing...</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4" />
+                  <span>Share (WhatsApp)</span>
+                </>
+              )}
             </button>
             <button
-              onClick={() => setCapturedPhotoResult(null)}
-              className="py-2.5 bg-slate-800 hover:bg-slate-700 font-semibold text-slate-200 rounded-xl text-xs transition-colors"
+              onClick={() => {
+                setCapturedPhotoResult(null);
+                setExportFeedback(null);
+              }}
+              disabled={isExporting}
+              className="py-2.5 bg-slate-800 hover:bg-slate-700 font-semibold text-slate-200 rounded-xl text-xs transition-colors disabled:opacity-50"
             >
               Take Another
             </button>

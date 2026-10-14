@@ -17,12 +17,15 @@ import {
   Layers,
   FileCheck2,
   ExternalLink,
+  CheckCircle,
+  Loader2,
 } from 'lucide-react';
 import { CapturedPhoto, Worker, WorkCategory, Language } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { dbService } from '../services/db';
 import { MapView } from './MapView';
 import { normalizeTime12Hour } from '../utils/timeFormat';
+import { PhotoExportService } from '../services/photoExportService';
 
 interface PhotoGalleryProps {
   language: Language;
@@ -48,6 +51,29 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
   const [selectedPhoto, setSelectedPhoto] = useState<CapturedPhoto | null>(null);
   const [activeTab, setActiveTab] = useState<'stamped' | 'original'>('stamped');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [activeExportId, setActiveExportId] = useState<string | null>(null);
+  const [activeAction, setActiveAction] = useState<'download' | 'share' | null>(null);
+  const [toastFeedback, setToastFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+    photo?: CapturedPhoto;
+    action?: 'download' | 'share';
+  } | null>(null);
+
+  const showToast = (
+    type: 'success' | 'error',
+    message: string,
+    photo?: CapturedPhoto,
+    action?: 'download' | 'share'
+  ) => {
+    setToastFeedback({ type, message, photo, action });
+    if (type === 'success') {
+      setTimeout(() => {
+        setToastFeedback((prev) => (prev?.message === message ? null : prev));
+      }, 4000);
+    }
+  };
 
   // Extract unique wards
   const wards = Array.from(new Set(photos.map((p) => p.wardNumber).filter(Boolean)));
@@ -76,38 +102,44 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
     onRefresh();
   };
 
-  const handleDownload = (photo: CapturedPhoto, type: 'stamped' | 'original' = 'stamped') => {
+  const handleDownload = async (photo: CapturedPhoto, type: 'stamped' | 'original' = 'stamped') => {
+    if (isExporting) return;
     const url = type === 'original' && photo.originalDataUrl ? photo.originalDataUrl : photo.stampedDataUrl;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = type === 'original' ? `Original_${photo.filename}` : photo.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const filename = type === 'original' ? `Original_${photo.filename}` : photo.filename;
+
+    try {
+      setIsExporting(true);
+      setActiveExportId(photo.id);
+      setActiveAction('download');
+      setToastFeedback(null);
+      const res = await PhotoExportService.savePhotoToDevice(url, filename);
+      showToast('success', res.message || 'Photo saved successfully to Gallery.', photo, 'download');
+    } catch (err) {
+      console.error('Download error:', err);
+      showToast('error', (err as Error)?.message || 'Failed to save photo to Gallery.', photo, 'download');
+    } finally {
+      setIsExporting(false);
+      setActiveExportId(null);
+      setActiveAction(null);
+    }
   };
 
   const handleShare = async (photo: CapturedPhoto) => {
+    if (isExporting) return;
     try {
-      const res = await fetch(photo.stampedDataUrl);
-      const blob = await res.blob();
-      const file = new File([blob], photo.filename, { type: 'image/jpeg' });
-
-      // Share only the photo file without any text/caption or title
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-        });
-      } else if (navigator.share) {
-        await navigator.share({
-          files: [file],
-        });
-      } else {
-        handleDownload(photo);
-      }
+      setIsExporting(true);
+      setActiveExportId(photo.id);
+      setActiveAction('share');
+      setToastFeedback(null);
+      const res = await PhotoExportService.sharePhotoToWhatsApp(photo.stampedDataUrl, photo.filename);
+      showToast('success', res.message || 'Opening WhatsApp...', photo, 'share');
     } catch (err) {
-      if ((err as Error)?.name !== 'AbortError') {
-        console.warn('Share canceled/unsupported:', err);
-      }
+      console.error('Share error:', err);
+      showToast('error', (err as Error)?.message || 'Failed to share photo to WhatsApp.', photo, 'share');
+    } finally {
+      setIsExporting(false);
+      setActiveExportId(null);
+      setActiveAction(null);
     }
   };
 
@@ -261,17 +293,27 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
                   </button>
                   <button
                     onClick={() => handleShare(photo)}
-                    className="p-1.5 bg-slate-700/70 hover:bg-slate-700 text-emerald-400 rounded-lg transition-colors"
-                    title="Share Photo"
+                    disabled={isExporting}
+                    className="p-1.5 bg-slate-700/70 hover:bg-slate-700 text-emerald-400 rounded-lg transition-colors disabled:opacity-50"
+                    title="Share Photo (WhatsApp)"
                   >
-                    <Share2 className="w-4 h-4" />
+                    {isExporting && activeExportId === photo.id && activeAction === 'share' ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                    ) : (
+                      <Share2 className="w-4 h-4" />
+                    )}
                   </button>
                   <button
                     onClick={() => handleDownload(photo)}
-                    className="p-1.5 bg-slate-700/70 hover:bg-slate-700 text-sky-400 rounded-lg transition-colors"
+                    disabled={isExporting}
+                    className="p-1.5 bg-slate-700/70 hover:bg-slate-700 text-sky-400 rounded-lg transition-colors disabled:opacity-50"
                     title="Download Photo"
                   >
-                    <Download className="w-4 h-4" />
+                    {isExporting && activeExportId === photo.id && activeAction === 'download' ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
                   </button>
                   <button
                     onClick={() => setDeletingId(photo.id)}
@@ -284,6 +326,48 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Floating Global Toast Notification for main gallery view */}
+      {!selectedPhoto && toastFeedback && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-[90%] pointer-events-auto animate-fade-in">
+          <div
+            className={`p-3 rounded-2xl border shadow-2xl flex items-center justify-between gap-3 text-xs backdrop-blur-md ${
+              toastFeedback.type === 'success'
+                ? 'bg-emerald-950/95 border-emerald-500/60 text-emerald-200'
+                : 'bg-rose-950/95 border-rose-500/60 text-rose-200'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              {toastFeedback.type === 'success' ? (
+                <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+              )}
+              <span className="font-medium truncate">{toastFeedback.message}</span>
+            </div>
+            {toastFeedback.type === 'error' && toastFeedback.photo && (
+              <button
+                onClick={() => {
+                  if (toastFeedback.action === 'share') {
+                    handleShare(toastFeedback.photo!);
+                  } else {
+                    handleDownload(toastFeedback.photo!);
+                  }
+                }}
+                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors"
+              >
+                Retry
+              </button>
+            )}
+            <button
+              onClick={() => setToastFeedback(null)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -304,17 +388,37 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleShare(selectedPhoto)}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                disabled={isExporting}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
-                <Share2 className="w-3.5 h-3.5" />
-                <span>Share</span>
+                {isExporting && activeExportId === selectedPhoto.id && activeAction === 'share' ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Sharing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Share</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => handleDownload(selectedPhoto, activeTab)}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                disabled={isExporting}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
+                {isExporting && activeExportId === selectedPhoto.id && activeAction === 'download' ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download</span>
+                  </>
+                )}
               </button>
               <button
                 onClick={() => setSelectedPhoto(null)}
@@ -324,6 +428,40 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Inspector Feedback banner */}
+          {toastFeedback && (
+            <div
+              className={`mt-2 p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 animate-fade-in ${
+                toastFeedback.type === 'success'
+                  ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300'
+                  : 'bg-rose-950/90 border-rose-500/50 text-rose-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {toastFeedback.type === 'success' ? (
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                )}
+                <span className="truncate">{toastFeedback.message}</span>
+              </div>
+              {toastFeedback.type === 'error' && (
+                <button
+                  onClick={() => {
+                    if (toastFeedback.action === 'share') {
+                      handleShare(selectedPhoto);
+                    } else {
+                      handleDownload(selectedPhoto, activeTab);
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 py-4">
             {/* Image Preview on Left / Center */}

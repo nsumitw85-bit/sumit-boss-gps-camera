@@ -632,7 +632,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <button
-              onClick={() => voiceService.announceEvent('welcome', localSettings.language)}
+              onClick={() => voiceService.announceEvent('welcome', localSettings.language, true)}
               className="w-full py-2 bg-slate-900 hover:bg-slate-750 text-slate-300 border border-slate-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
             >
               <Volume2 className="w-3.5 h-3.5 text-amber-400" />

@@ -116,13 +116,13 @@ export default function App() {
     };
   }, []);
 
-  // Voice announcement on initial launch
+  // Automatic welcome voice announcement on initial application launch
   useEffect(() => {
     const timer = setTimeout(() => {
-      voiceService.announceEvent('welcome', settings.language);
-    }, 1200);
+      voiceService.announceWelcomeOnLaunch(false);
+    }, 800);
     return () => clearTimeout(timer);
-  }, [settings.language]);
+  }, []);
 
   const handleRefreshGps = async (): Promise<LocationData> => {
     const freshFix = await gpsService.requestSingleFreshFix();
