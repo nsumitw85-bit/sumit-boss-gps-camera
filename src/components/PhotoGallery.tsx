@@ -2,95 +2,77 @@ import React, { useState } from 'react';
 import {
   Images,
   Search,
-  Filter,
   Trash2,
   Share2,
   Download,
   Eye,
   Calendar,
-  User,
-  Briefcase,
   MapPin,
   Clock,
   X,
   AlertTriangle,
-  Layers,
-  FileCheck2,
-  ExternalLink,
+  Building2,
   CheckCircle,
   Loader2,
+  Camera,
 } from 'lucide-react';
-import { CapturedPhoto, Worker, WorkCategory, Language } from '../types';
+import { CapturedPhoto, Language } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { dbService } from '../services/db';
 import { MapView } from './MapView';
-import { normalizeTime12Hour } from '../utils/timeFormat';
 import { PhotoExportService } from '../services/photoExportService';
 
 interface PhotoGalleryProps {
   language: Language;
   photos: CapturedPhoto[];
-  workers: Worker[];
-  categories: WorkCategory[];
   onRefresh: () => void;
   onBack: () => void;
+  onOpenCamera?: () => void;
 }
 
 export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
   language,
   photos,
-  workers,
-  categories,
   onRefresh,
   onBack,
+  onOpenCamera,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterWorker, setFilterWorker] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterWard, setFilterWard] = useState('');
+  const [filterWard, setFilterWard] = useState('all');
   const [selectedPhoto, setSelectedPhoto] = useState<CapturedPhoto | null>(null);
-  const [activeTab, setActiveTab] = useState<'stamped' | 'original'>('stamped');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [activeExportId, setActiveExportId] = useState<string | null>(null);
-  const [activeAction, setActiveAction] = useState<'download' | 'share' | null>(null);
   const [toastFeedback, setToastFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
-    photo?: CapturedPhoto;
-    action?: 'download' | 'share';
   } | null>(null);
 
-  const showToast = (
-    type: 'success' | 'error',
-    message: string,
-    photo?: CapturedPhoto,
-    action?: 'download' | 'share'
-  ) => {
-    setToastFeedback({ type, message, photo, action });
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToastFeedback({ type, message });
     if (type === 'success') {
       setTimeout(() => {
-        setToastFeedback((prev) => (prev?.message === message ? null : prev));
-      }, 4000);
+        setToastFeedback(null);
+      }, 3500);
     }
   };
 
-  // Extract unique wards
-  const wards = Array.from(new Set(photos.map((p) => p.wardNumber).filter(Boolean)));
+  // Distinct wards present in captured photos
+  const availableWards = Array.from(
+    new Set(photos.map((p) => p.wardNumber).filter(Boolean) as string[])
+  ).sort();
 
   const filteredPhotos = photos.filter((p) => {
     const matchesSearch =
       searchTerm === '' ||
       p.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (p.workerName && p.workerName.toLowerCase().includes(searchTerm.toLowerCase())) ||
       p.address.fullAddress.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.wardNumber && p.wardNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (p.notes && p.notes.toLowerCase().includes(searchTerm.toLowerCase()));
 
-    const matchesWorker = filterWorker === '' || p.workerId === filterWorker;
-    const matchesCategory = filterCategory === '' || p.workCategoryId === filterCategory;
-    const matchesWard = filterWard === '' || p.wardNumber === filterWard;
+    const matchesWard = filterWard === 'all' || p.wardNumber === filterWard;
 
-    return matchesSearch && matchesWorker && matchesCategory && matchesWard;
+    return matchesSearch && matchesWard;
   });
 
   const handleDelete = async (id: string) => {
@@ -100,521 +82,364 @@ export const PhotoGallery: React.FC<PhotoGalleryProps> = ({
       setSelectedPhoto(null);
     }
     onRefresh();
+    showToast('success', 'Photo removed.');
   };
 
-  const handleDownload = async (photo: CapturedPhoto, type: 'stamped' | 'original' = 'stamped') => {
-    if (isExporting) return;
-    const url = type === 'original' && photo.originalDataUrl ? photo.originalDataUrl : photo.stampedDataUrl;
-    const filename = type === 'original' ? `Original_${photo.filename}` : photo.filename;
-
+  const handleDownloadPhoto = async (photo: CapturedPhoto) => {
+    setIsExporting(true);
+    setActiveExportId(photo.id);
     try {
-      setIsExporting(true);
-      setActiveExportId(photo.id);
-      setActiveAction('download');
-      setToastFeedback(null);
-      const res = await PhotoExportService.savePhotoToDevice(url, filename);
-      showToast('success', res.message || 'Photo saved successfully to Gallery.', photo, 'download');
-    } catch (err) {
-      console.error('Download error:', err);
-      showToast('error', (err as Error)?.message || 'Failed to save photo to Gallery.', photo, 'download');
+      const res = await PhotoExportService.savePhotoToDevice(photo.stampedDataUrl, photo.filename);
+      showToast('success', res.message || 'Photo saved successfully to Gallery.');
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to save photo.');
     } finally {
       setIsExporting(false);
       setActiveExportId(null);
-      setActiveAction(null);
     }
   };
 
-  const handleShare = async (photo: CapturedPhoto) => {
-    if (isExporting) return;
+  const handleSharePhoto = async (photo: CapturedPhoto) => {
+    setIsExporting(true);
+    setActiveExportId(photo.id);
     try {
-      setIsExporting(true);
-      setActiveExportId(photo.id);
-      setActiveAction('share');
-      setToastFeedback(null);
-      const res = await PhotoExportService.sharePhotoToWhatsApp(photo.stampedDataUrl, photo.filename);
-      showToast('success', res.message || 'Opening WhatsApp...', photo, 'share');
-    } catch (err) {
-      console.error('Share error:', err);
-      showToast('error', (err as Error)?.message || 'Failed to share photo to WhatsApp.', photo, 'share');
+      await PhotoExportService.sharePhotoViaWhatsApp({
+        photoDataUrl: photo.stampedDataUrl,
+        filename: photo.filename,
+        addressText: photo.address?.fullAddress,
+        wardNumber: photo.wardNumber,
+        latitude: photo.location.latitude,
+        longitude: photo.location.longitude,
+        timestampStr: `${photo.captureDateStr} ${photo.captureTimeStr}`,
+      });
+      showToast('success', 'Shared successfully via WhatsApp.');
+    } catch (err: any) {
+      showToast('error', err.message || 'WhatsApp sharing failed.');
     } finally {
       setIsExporting(false);
       setActiveExportId(null);
-      setActiveAction(null);
     }
   };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-      {/* Header bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-800/80 p-5 rounded-2xl border border-slate-700 shadow-md">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/90 p-5 rounded-2xl border border-slate-800 shadow-xl backdrop-blur-md">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Images className="w-6 h-6 text-sky-400" />
-            <span>{getTranslation(language, 'galleryTitle')}</span>
+          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <Images className="w-5 h-5 text-sky-400" />
+            <span>{getTranslation(language, 'photoGallery')}</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-600/30 text-sky-300 font-mono font-bold">
+              {photos.length}
+            </span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Browse and export GPS location-stamped field photos and metadata records.
+            Browse and export high-resolution GPS-stamped field documentation photographs.
           </p>
         </div>
 
-        <button
-          onClick={onBack}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-xl transition-colors self-start sm:self-auto"
-        >
-          {getTranslation(language, 'back')}
-        </button>
+        <div className="flex items-center gap-2">
+          {onOpenCamera && (
+            <button
+              onClick={onOpenCamera}
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-blue-500/20 transition-all"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Capture Photo</span>
+            </button>
+          )}
+
+          <button
+            onClick={onBack}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition-colors"
+          >
+            {getTranslation(language, 'back')}
+          </button>
+        </div>
       </div>
 
-      {/* Search and Filters Bar */}
-      <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/80 space-y-3 shadow-md">
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by worker, address, filename, or notes..."
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
-          />
+      {/* Toast Feedback */}
+      {toastFeedback && (
+        <div
+          className={`px-4 py-3 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg ${
+            toastFeedback.type === 'success'
+              ? 'bg-emerald-950/90 text-emerald-300 border border-emerald-700/60'
+              : 'bg-red-950/90 text-red-300 border border-red-700/60'
+          }`}
+        >
+          {toastFeedback.type === 'success' ? (
+            <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+          )}
+          <span>{toastFeedback.message}</span>
         </div>
+      )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-          {/* Worker Filter */}
-          <select
-            value={filterWorker}
-            onChange={(e) => setFilterWorker(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500 font-medium"
-          >
-            <option value="">{getTranslation(language, 'allWorkers')}</option>
-            {workers.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
+      {/* Filter & Search Bar */}
+      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 shadow-md space-y-3">
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          {/* Search Box */}
+          <div className="relative flex-1 w-full">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by address, coordinates, ward, or filename..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
 
-          {/* Category Filter */}
-          <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500 font-medium"
-          >
-            <option value="">{getTranslation(language, 'allCategories')}</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {language === 'mr' ? c.nameMr : language === 'hi' ? c.nameHi : c.name}
-              </option>
-            ))}
-          </select>
-
-          {/* Ward Filter */}
-          <select
-            value={filterWard}
-            onChange={(e) => setFilterWard(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500 font-medium"
-          >
-            <option value="">{getTranslation(language, 'allWards')}</option>
-            {wards.map((w) => (
-              <option key={w} value={w}>
-                {w}
-              </option>
-            ))}
-          </select>
+          {/* Ward Filter Select */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
+            <select
+              value={filterWard}
+              onChange={(e) => setFilterWard(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 transition-colors w-full sm:w-auto"
+            >
+              <option value="all">All Wards ({photos.length})</option>
+              {availableWards.map((w) => (
+                <option key={w} value={w}>
+                  {w}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
       {/* Photos Grid */}
       {filteredPhotos.length === 0 ? (
-        <div className="bg-slate-800/40 border border-dashed border-slate-700 rounded-2xl p-12 text-center text-slate-400 space-y-3">
-          <Images className="w-12 h-12 mx-auto text-slate-500" />
-          <p className="text-sm font-medium">{getTranslation(language, 'noPhotosFound')}</p>
+        <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-3">
+          <Images className="w-12 h-12 mx-auto text-slate-600" />
+          <p className="text-sm font-medium">No photographs found matching your criteria.</p>
+          {onOpenCamera && (
+            <button
+              onClick={onOpenCamera}
+              className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md"
+            >
+              Open GPS Camera
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredPhotos.map((photo) => (
-            <div
-              key={photo.id}
-              className="bg-slate-800/90 border border-slate-700/80 rounded-2xl overflow-hidden shadow-lg hover:border-slate-600 transition-all flex flex-col group"
-            >
-              {/* Thumbnail Container */}
+          {filteredPhotos.map((photo) => {
+            const isProcessingThis = isExporting && activeExportId === photo.id;
+
+            return (
               <div
-                onClick={() => setSelectedPhoto(photo)}
-                className="relative aspect-video bg-slate-950 cursor-pointer overflow-hidden"
+                key={photo.id}
+                className="group bg-slate-900/90 rounded-2xl border border-slate-800 overflow-hidden shadow-lg hover:border-slate-700 transition-all flex flex-col"
               >
-                <img
-                  src={photo.thumbnailDataUrl || photo.stampedDataUrl}
-                  alt={photo.filename}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-
-                {/* Overlay Badge */}
-                <div className="absolute top-2 left-2 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-md text-[10px] font-mono text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  <span>±{photo.location.accuracy}m</span>
-                </div>
-
-                <div className="absolute bottom-2 right-2 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-mono text-slate-300">
-                  {photo.captureDateStr} {normalizeTime12Hour(photo.captureTimeStr, photo.timestamp)}
-                </div>
-              </div>
-
-              {/* Photo Details */}
-              <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                <div>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="font-bold text-white truncate max-w-[180px]">
-                      {photo.workerName || 'Unassigned'}
-                    </span>
-                    <span className="text-[11px] text-sky-400 font-semibold px-2 py-0.5 bg-sky-500/10 rounded border border-sky-500/20 truncate max-w-[110px]">
-                      {photo.workCategoryName || 'Work'}
-                    </span>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
-                    {photo.address.fullAddress}
-                  </p>
-
-                  <div className="mt-2 text-[10px] font-mono text-slate-400 flex items-center justify-between">
-                    <span>Ward: {photo.wardNumber || 'N/A'}</span>
-                    <span className={photo.address.isVerifiedPin ? 'text-emerald-400' : 'text-amber-400'}>
-                      PIN: {photo.address.pinCode || 'N/A'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Card Action Buttons */}
-                <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => setSelectedPhoto(photo)}
-                    className="flex-1 py-1.5 bg-slate-700/70 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-blue-400" />
-                    <span>View</span>
-                  </button>
-                  <button
-                    onClick={() => handleShare(photo)}
-                    disabled={isExporting}
-                    className="p-1.5 bg-slate-700/70 hover:bg-slate-700 text-emerald-400 rounded-lg transition-colors disabled:opacity-50"
-                    title="Share Photo (WhatsApp)"
-                  >
-                    {isExporting && activeExportId === photo.id && activeAction === 'share' ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                    ) : (
-                      <Share2 className="w-4 h-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleDownload(photo)}
-                    disabled={isExporting}
-                    className="p-1.5 bg-slate-700/70 hover:bg-slate-700 text-sky-400 rounded-lg transition-colors disabled:opacity-50"
-                    title="Download Photo"
-                  >
-                    {isExporting && activeExportId === photo.id && activeAction === 'download' ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
-                    ) : (
-                      <Download className="w-4 h-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setDeletingId(photo.id)}
-                    className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"
-                    title="Delete Photo"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Floating Global Toast Notification for main gallery view */}
-      {!selectedPhoto && toastFeedback && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-[90%] pointer-events-auto animate-fade-in">
-          <div
-            className={`p-3 rounded-2xl border shadow-2xl flex items-center justify-between gap-3 text-xs backdrop-blur-md ${
-              toastFeedback.type === 'success'
-                ? 'bg-emerald-950/95 border-emerald-500/60 text-emerald-200'
-                : 'bg-rose-950/95 border-rose-500/60 text-rose-200'
-            }`}
-          >
-            <div className="flex items-center gap-2.5 flex-1 min-w-0">
-              {toastFeedback.type === 'success' ? (
-                <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-              ) : (
-                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
-              )}
-              <span className="font-medium truncate">{toastFeedback.message}</span>
-            </div>
-            {toastFeedback.type === 'error' && toastFeedback.photo && (
-              <button
-                onClick={() => {
-                  if (toastFeedback.action === 'share') {
-                    handleShare(toastFeedback.photo!);
-                  } else {
-                    handleDownload(toastFeedback.photo!);
-                  }
-                }}
-                className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors"
-              >
-                Retry
-              </button>
-            )}
-            <button
-              onClick={() => setToastFeedback(null)}
-              className="p-1 rounded-lg text-slate-400 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Full Screen Photo Inspector Modal */}
-      {selectedPhoto && (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col p-4 animate-fade-in overflow-y-auto">
-          {/* Top Inspector Bar */}
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-white">
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-base tracking-wide text-sky-400">
-                SUMIT BOSS PHOTO INSPECTOR
-              </span>
-              <span className="text-xs text-slate-400 hidden sm:inline font-mono">
-                ({selectedPhoto.filename})
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleShare(selectedPhoto)}
-                disabled={isExporting}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-              >
-                {isExporting && activeExportId === selectedPhoto.id && activeAction === 'share' ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Sharing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>Share</span>
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => handleDownload(selectedPhoto, activeTab)}
-                disabled={isExporting}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-              >
-                {isExporting && activeExportId === selectedPhoto.id && activeAction === 'download' ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download</span>
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => setSelectedPhoto(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Inspector Feedback banner */}
-          {toastFeedback && (
-            <div
-              className={`mt-2 p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 animate-fade-in ${
-                toastFeedback.type === 'success'
-                  ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300'
-                  : 'bg-rose-950/90 border-rose-500/50 text-rose-300'
-              }`}
-            >
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                {toastFeedback.type === 'success' ? (
-                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                )}
-                <span className="truncate">{toastFeedback.message}</span>
-              </div>
-              {toastFeedback.type === 'error' && (
-                <button
-                  onClick={() => {
-                    if (toastFeedback.action === 'share') {
-                      handleShare(selectedPhoto);
-                    } else {
-                      handleDownload(selectedPhoto, activeTab);
-                    }
-                  }}
-                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors"
+                {/* Photo Thumbnail */}
+                <div
+                  onClick={() => setSelectedPhoto(photo)}
+                  className="relative aspect-video bg-black cursor-pointer overflow-hidden"
                 >
-                  Retry
-                </button>
-              )}
-            </div>
-          )}
+                  <img
+                    src={photo.thumbnailDataUrl || photo.stampedDataUrl}
+                    alt={photo.filename}
+                    className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
+                    loading="lazy"
+                  />
 
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 py-4">
-            {/* Image Preview on Left / Center */}
-            <div className="lg:col-span-2 flex flex-col space-y-3">
-              {/* Switch Stamped vs Original */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setActiveTab('stamped')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                    activeTab === 'stamped'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  <FileCheck2 className="w-3.5 h-3.5" />
-                  <span>Stamped Photo (Watermarked)</span>
-                </button>
-                {selectedPhoto.originalDataUrl && (
-                  <button
-                    onClick={() => setActiveTab('original')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                      activeTab === 'original'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    <span>Original Photo</span>
-                  </button>
-                )}
-              </div>
-
-              <div className="flex-1 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-center p-2 min-h-[340px]">
-                <img
-                  src={activeTab === 'original' && selectedPhoto.originalDataUrl ? selectedPhoto.originalDataUrl : selectedPhoto.stampedDataUrl}
-                  alt={selectedPhoto.filename}
-                  className="max-h-[70vh] max-w-full object-contain rounded-xl shadow-2xl"
-                />
-              </div>
-            </div>
-
-            {/* Metadata Inspector Card on Right */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-white space-y-4 overflow-y-auto max-h-[75vh]">
-              <h3 className="font-bold text-sm text-sky-400 uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
-                <MapPin className="w-4 h-4" />
-                Verified Field Telemetry
-              </h3>
-
-              <div className="space-y-2.5 text-xs">
-                <div>
-                  <span className="text-slate-400 font-bold block">WORKER NAME:</span>
-                  <span className="text-amber-300 font-semibold text-sm">
-                    {selectedPhoto.workerName || 'Unassigned'}
-                  </span>
-                </div>
-
-                <div>
-                  <span className="text-slate-400 font-bold block">WORK CATEGORY:</span>
-                  <span className="text-sky-300 font-semibold">{selectedPhoto.workCategoryName || 'General'}</span>
-                </div>
-
-                <div>
-                  <span className="text-slate-400 font-bold block">WARD &amp; AREA:</span>
-                  <span className="text-white">{selectedPhoto.wardNumber || 'N/A'}{selectedPhoto.area ? ` - ${selectedPhoto.area}` : ''}</span>
-                </div>
-
-                <div className="pt-2 border-t border-slate-800 grid grid-cols-2 gap-2 font-mono">
-                  <div>
-                    <span className="text-slate-400 font-bold block">LATITUDE:</span>
-                    <span className="text-emerald-400">{selectedPhoto.location.latitude.toFixed(6)}°</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-bold block">LONGITUDE:</span>
-                    <span className="text-emerald-400">{selectedPhoto.location.longitude.toFixed(6)}°</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-bold block">GPS ACCURACY:</span>
-                    <span className="text-emerald-400">±{selectedPhoto.location.accuracy}m</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-bold block">HEADING / BEARING:</span>
-                    <span className="text-sky-400">
-                      {selectedPhoto.compassDirection || selectedPhoto.location.compassDirection || 'Direction unavailable'}
+                  {/* Top Ward Badge */}
+                  <div className="absolute top-2 left-2 z-10">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md shadow backdrop-blur-md ${
+                        photo.wardNumber?.includes('Outside') ||
+                        photo.wardNumber?.includes('Required') ||
+                        photo.wardNumber?.includes('Not Verified')
+                          ? 'bg-red-950/85 text-red-300 border border-red-700/50'
+                          : 'bg-slate-950/85 text-amber-300 border border-amber-500/50'
+                      }`}
+                    >
+                      {photo.wardNumber &&
+                      !photo.wardNumber.toLowerCase().includes('ward') &&
+                      !photo.wardNumber.toLowerCase().includes('outside') &&
+                      !photo.wardNumber.toLowerCase().includes('required')
+                        ? `Ward No. ${photo.wardNumber}`
+                        : photo.wardNumber || 'Outside Tivsa'}
                     </span>
                   </div>
-                  <div className="col-span-2">
-                    <span className="text-slate-400 font-bold block">PIN CODE:</span>
-                    <span className={selectedPhoto.address.isVerifiedPin ? 'text-emerald-400' : 'text-amber-400'}>
-                      {selectedPhoto.address.pinCode || 'PIN code unavailable'}
+
+                  {/* Accuracy Badge */}
+                  <div className="absolute top-2 right-2 z-10">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-950/85 text-emerald-300 border border-emerald-500/40 shadow backdrop-blur-md">
+                      ±{photo.location.accuracy}m
+                    </span>
+                  </div>
+
+                  {/* Overlay Eye Prompt */}
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <span className="px-3 py-1 bg-slate-900/90 rounded-full text-white text-[11px] font-semibold flex items-center gap-1.5 shadow">
+                      <Eye className="w-3.5 h-3.5" /> Full Resolution
                     </span>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800">
-                  <span className="text-slate-400 font-bold block mb-1">VERIFIED ADDRESS:</span>
-                  <p className="text-slate-200 bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-[11px] leading-relaxed">
-                    {selectedPhoto.address.fullAddress}
-                  </p>
-                </div>
+                {/* Metadata Body */}
+                <div className="p-3.5 flex-1 flex flex-col justify-between space-y-2">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <Calendar className="w-3 h-3 text-orange-400" />
+                      <span>{photo.captureDateStr}</span>
+                      <span className="text-slate-600">•</span>
+                      <Clock className="w-3 h-3 text-emerald-400" />
+                      <span>{photo.captureTimeStr}</span>
+                    </div>
 
-                {selectedPhoto.notes && (
-                  <div>
-                    <span className="text-slate-400 font-bold block mb-1">FIELD NOTES:</span>
-                    <p className="text-slate-300 italic bg-slate-950 p-2 rounded-lg border border-slate-800 text-[11px]">
-                      "{selectedPhoto.notes}"
+                    <p className="text-xs text-slate-200 line-clamp-2 leading-relaxed">
+                      {photo.address.fullAddress}
                     </p>
-                  </div>
-                )}
-              </div>
 
-              {/* Embedded Map Pin for Location */}
-              <div className="pt-2">
-                <span className="text-slate-400 font-bold block mb-1 text-xs">GPS FIX LOCATION MAP:</span>
-                <MapView
-                  latitude={selectedPhoto.location.latitude}
-                  longitude={selectedPhoto.location.longitude}
-                  accuracy={selectedPhoto.location.accuracy}
-                  className="h-44 rounded-xl"
-                />
+                    <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-red-400" />
+                      <span>
+                        {photo.location.latitude.toFixed(5)}°, {photo.location.longitude.toFixed(5)}°
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Card Action Buttons: Download & WhatsApp Share */}
+                  <div className="pt-2 border-t border-slate-800 flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleDownloadPhoto(photo)}
+                      disabled={isProcessingThis}
+                      className="flex-1 py-1.5 px-2 bg-blue-600/20 hover:bg-blue-600/30 text-sky-300 border border-blue-500/30 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      title="Save to Mobile Gallery"
+                    >
+                      {isProcessingThis ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Download className="w-3 h-3" />
+                      )}
+                      <span>Download</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleSharePhoto(photo)}
+                      disabled={isProcessingThis}
+                      className="flex-1 py-1.5 px-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      title="Share to WhatsApp"
+                    >
+                      <Share2 className="w-3 h-3" />
+                      <span>WhatsApp</span>
+                    </button>
+
+                    <button
+                      onClick={() => setDeletingId(photo.id)}
+                      className="p-1.5 bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-xl border border-slate-700 transition-colors"
+                      title="Delete photo"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation Modal */}
       {deletingId && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-rose-500/40 rounded-2xl max-w-sm w-full p-5 text-white space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full text-white space-y-4 shadow-2xl">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-xl border border-rose-500/30">
-                <AlertTriangle className="w-6 h-6" />
+              <div className="p-3 rounded-full bg-red-500/20 text-red-400">
+                <Trash2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-bold text-sm text-white">{getTranslation(language, 'deletePhoto')}</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {getTranslation(language, 'confirmDeletePhoto')}
-                </p>
+                <h3 className="font-bold text-base">Delete Photo?</h3>
+                <p className="text-xs text-slate-400">This action cannot be undone.</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center gap-2 pt-2">
               <button
                 onClick={() => setDeletingId(null)}
-                className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-medium"
+                className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold text-slate-300 transition-colors"
               >
-                {getTranslation(language, 'cancel')}
+                Cancel
               </button>
               <button
                 onClick={() => handleDelete(deletingId)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold"
+                className="flex-1 py-2 bg-red-600 hover:bg-red-500 rounded-xl text-xs font-bold text-white shadow transition-colors"
               >
-                {getTranslation(language, 'delete')}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full Resolution Inspection Modal */}
+      {selectedPhoto && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-4 overflow-y-auto">
+          {/* Modal Header */}
+          <div className="w-full max-w-4xl flex items-center justify-between text-white pb-3 border-b border-slate-800">
+            <div>
+              <span className="font-bold text-sm block">Full Resolution GPS Photo</span>
+              <span className="text-[11px] text-slate-400 font-mono">
+                {selectedPhoto.captureDateStr} • {selectedPhoto.captureTimeStr}
+              </span>
+            </div>
+
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Image Display */}
+          <div className="flex-1 max-w-4xl w-full flex items-center justify-center my-3">
+            <img
+              src={selectedPhoto.stampedDataUrl}
+              alt="High-Res Stamped Photo"
+              className="max-h-[66vh] w-auto object-contain rounded-xl shadow-2xl border border-slate-800"
+            />
+          </div>
+
+          {/* Action Bar */}
+          <div className="w-full max-w-4xl bg-slate-900/90 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-xs text-slate-300 text-center sm:text-left">
+              <span className="font-bold text-amber-300">{selectedPhoto.wardNumber}</span>
+              <span className="text-slate-500 mx-1">•</span>
+              <span className="font-mono text-slate-400">
+                {selectedPhoto.location.latitude.toFixed(6)}°, {selectedPhoto.location.longitude.toFixed(6)}°
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => handleDownloadPhoto(selectedPhoto)}
+                disabled={isExporting}
+                className="flex-1 sm:flex-initial py-2.5 px-4 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download to Gallery</span>
+              </button>
+
+              <button
+                onClick={() => handleSharePhoto(selectedPhoto)}
+                disabled={isExporting}
+                className="flex-1 sm:flex-initial py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md transition-all"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Share WhatsApp</span>
+              </button>
+
+              <button
+                onClick={() => setSelectedPhoto(null)}
+                className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>

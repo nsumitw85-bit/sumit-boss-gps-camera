@@ -1,10 +1,9 @@
 export type Language = 'en' | 'mr' | 'hi';
 
 export type OverlayLayout = 
-  | 'classic_bottom' 
-  | 'modern_card' 
-  | 'sidebar_compact' 
-  | 'full_inspector';
+  | 'vertical_stamp'       // Standard Single Vertical Block (bottom-left)
+  | 'vertical_stamp_right' // Single Vertical Block (bottom-right)
+  | 'classic_bottom';      // Full width bottom band
 
 export type GpsStatusType = 
   | 'GPS FIX ACQUIRED'
@@ -48,9 +47,10 @@ export interface AddressData {
 
 export interface WardBoundaryFeature {
   id: string;
-  wardNumber: string;
-  wardName?: string;
+  wardNumber: string; // e.g. "Ward No. 1" to "Ward No. 17"
+  wardName?: string;   // e.g. "Chhatrapati Shivaji Maharaj Ward"
   municipality?: string;
+  color?: string;
   // GeoJSON Polygon coordinates: array of linear rings [[lng, lat], ...]
   coordinates: number[][][];
 }
@@ -62,37 +62,23 @@ export interface WardBoundaryDataset {
   wards: WardBoundaryFeature[];
 }
 
+export type WardVerificationStatus =
+  | 'VERIFIED'
+  | 'UNVERIFIED'
+  | 'GPS UNCERTAIN'
+  | 'OUTSIDE MUNICIPALITY';
+
 export interface WardMatchResult {
-  wardNumber: string;
+  wardNumber: string; // "Ward No. X" or "Ward Not Verified"
   wardName?: string;
-  status: 'matched' | 'not_identified' | 'boundary_warning' | 'overlapping';
+  status: 'matched' | 'not_verified' | 'boundary_warning' | 'overlapping';
+  verificationStatus: WardVerificationStatus;
   distanceToEdgeMeters?: number;
   overlappingWards?: string[];
   isManual?: boolean;
-  confidence: 'high' | 'boundary_uncertain' | 'none' | 'manual';
-}
-
-export interface Worker {
-  id: string;
-  name: string;
-  mobile?: string;
-  designation?: string;
-  workCategoryId?: string;
-  wardNumber?: string;
-  area?: string;
-  joiningDate?: string;
-  notes?: string;
-  createdAt: number;
-}
-
-export interface WorkCategory {
-  id: string;
-  name: string;
-  nameMr: string;
-  nameHi: string;
-  description?: string;
-  isDefault?: boolean;
-  createdAt: number;
+  confidence: 'high' | 'boundary_uncertain' | 'none';
+  datasetSource?: string;
+  datasetVersion?: string;
 }
 
 export interface CapturedPhoto {
@@ -106,10 +92,6 @@ export interface CapturedPhoto {
   thumbnailDataUrl?: string;
   location: LocationData;
   address: AddressData;
-  workerId?: string;
-  workerName?: string;
-  workCategoryId?: string;
-  workCategoryName?: string;
   wardNumber?: string;
   wardMatchResult?: WardMatchResult;
   compassHeading?: number | null;
@@ -123,17 +105,14 @@ export interface CapturedPhoto {
 export interface AppSettings {
   language: Language;
   overlayLayout: OverlayLayout;
-  minGpsAccuracy: number; // Warning threshold in meters (e.g. 20)
+  minGpsAccuracy: number; // Warning threshold in meters (default 20)
   autoRefreshGps: boolean;
   saveOriginalPhoto: boolean;
   saveStampedPhoto: boolean;
   photoQuality: number; // 0.7 - 1.0
-  defaultWorkerId?: string;
-  defaultCategoryId?: string;
-  defaultWard?: string;
   voiceAnnouncements: boolean;
   speechVolume: number;
-  dateFormat: 'DD/MM/YYYY' | 'YYYY-MM-DD';
+  dateFormat: 'DD-MM-YYYY' | 'DD/MM/YYYY' | 'YYYY-MM-DD';
   showMiniMapInStamp: boolean;
   googleMapsApiKey?: string;
   useGoogleMapsStatic: boolean;

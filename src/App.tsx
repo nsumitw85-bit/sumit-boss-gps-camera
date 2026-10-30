@@ -1,20 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Camera,
-  Home,
-  Users,
+  LayoutDashboard,
+  Navigation,
+  Map as MapIcon,
   Images,
-  FileText,
-  Settings as SettingsIcon,
-  FolderKanban,
   History,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import {
   Language,
   LocationData,
   AddressData,
-  Worker,
-  WorkCategory,
   CapturedPhoto,
   AppSettings,
 } from './types';
@@ -25,78 +22,43 @@ import { getTranslation } from './i18n/translations';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
 import { CameraView } from './components/CameraView';
-import { WorkerManager } from './components/WorkerManager';
-import { CategoryManager } from './components/CategoryManager';
+import { LiveLocationView } from './components/LiveLocationView';
+import { GoogleMapView } from './components/GoogleMapView';
 import { PhotoGallery } from './components/PhotoGallery';
 import { LocationHistoryView } from './components/LocationHistoryView';
-import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
 
 export default function App() {
-  // Requirement 3: Open the camera directly when the app starts
+  // Launch straight into GPS Camera
   const [activeScreen, setActiveScreen] = useState<string>('camera');
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [workers, setWorkers] = useState<Worker[]>([]);
-  const [categories, setCategories] = useState<WorkCategory[]>([]);
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
-
-  // Selected capture context
-  const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-  const [selectedWard, setSelectedWard] = useState<string>('');
 
   // Real GPS & Reverse Geocoded Address
   const [location, setLocation] = useState<LocationData | null>(null);
   const [address, setAddress] = useState<AddressData | null>(null);
 
-  // Load all initial data from IndexedDB
+  // Load photos and settings from IndexedDB
   const loadData = useCallback(async () => {
     try {
-      const [storedSettings, storedWorkers, storedCategories, storedPhotos] = await Promise.all([
+      const [storedSettings, storedPhotos] = await Promise.all([
         dbService.getSettings(),
-        dbService.getWorkers(),
-        dbService.getCategories(),
         dbService.getPhotos(),
       ]);
 
       setSettings(storedSettings);
-      setWorkers(storedWorkers);
-      setCategories(storedCategories);
       setPhotos(storedPhotos);
-
-      if (storedSettings.defaultWorkerId && !selectedWorkerId) {
-        setSelectedWorkerId(storedSettings.defaultWorkerId);
-      } else if (storedWorkers[0] && !selectedWorkerId) {
-        setSelectedWorkerId(storedWorkers[0].id);
-      }
-
-      if (storedSettings.defaultCategoryId && !selectedCategoryId) {
-        setSelectedCategoryId(storedSettings.defaultCategoryId);
-      } else if (storedCategories[0] && !selectedCategoryId) {
-        setSelectedCategoryId(storedCategories[0].id);
-      }
-
-      // Requirement 1: Never hardcode or default to Ward 12
-      if (
-        storedSettings.defaultWard &&
-        storedSettings.defaultWard !== 'Ward 12' &&
-        storedSettings.defaultWard !== 'Ward not identified' &&
-        !selectedWard
-      ) {
-        setSelectedWard(storedSettings.defaultWard);
-      }
-
       voiceService.configure(storedSettings.voiceAnnouncements, storedSettings.speechVolume);
     } catch (err) {
       console.error('Error loading stored app state:', err);
     }
-  }, [selectedWorkerId, selectedCategoryId]);
+  }, []);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Start GPS tracking
+  // Start continuous GPS tracking
   useEffect(() => {
     gpsService.startWatching();
 
@@ -104,7 +66,6 @@ export default function App() {
       setLocation(newLoc);
 
       if (newLoc.status === 'current' && newLoc.latitude && newLoc.longitude) {
-        // Reverse geocode if coordinates available
         const resolvedAddr = await gpsService.reverseGeocode(newLoc.latitude, newLoc.longitude);
         setAddress(resolvedAddr);
       }
@@ -116,11 +77,11 @@ export default function App() {
     };
   }, []);
 
-  // Automatic welcome voice announcement on initial application launch
+  // Automatic Welcome Voice on initial application launch: "Welcome to Sumit Boss."
   useEffect(() => {
     const timer = setTimeout(() => {
       voiceService.announceWelcomeOnLaunch(false);
-    }, 800);
+    }, 700);
     return () => clearTimeout(timer);
   }, []);
 
@@ -130,39 +91,107 @@ export default function App() {
     if (freshFix.status === 'current' && freshFix.latitude && freshFix.longitude) {
       const resolved = await gpsService.reverseGeocode(freshFix.latitude, freshFix.longitude, true);
       setAddress(resolved);
-      voiceService.announceEvent('gps_acquired', settings.language);
     }
     return freshFix;
-  };
-
-  const handleToggleVoice = () => {
-    const newVoiceState = !settings.voiceAnnouncements;
-    const updated = { ...settings, voiceAnnouncements: newVoiceState };
-    setSettings(updated);
-    dbService.saveSettings(updated);
-    voiceService.configure(newVoiceState, updated.speechVolume);
-  };
-
-  const handleLanguageChange = (lang: Language) => {
-    const updated = { ...settings, language: lang };
-    setSettings(updated);
-    dbService.saveSettings(updated);
   };
 
   return (
     <div
       className={`bg-slate-950 text-slate-100 flex flex-col font-sans ${
-        activeScreen === 'camera' ? 'h-screen overflow-hidden' : 'min-h-screen pb-16 md:pb-0'
+        activeScreen === 'camera' ? 'h-screen overflow-hidden' : 'min-h-screen pb-20 md:pb-0'
       }`}
     >
-      {/* Top Header Navbar */}
-      <Navbar
-        language={settings.language}
-        location={location}
-        onHomeClick={() => setActiveScreen('camera')}
-        onOpenSettings={() => setActiveScreen('settings')}
-        activeScreen={activeScreen}
-      />
+      {/* Top Header Navbar on non-camera views */}
+      {activeScreen !== 'camera' && (
+        <Navbar
+          language={settings.language}
+          location={location}
+          onHomeClick={() => setActiveScreen('dashboard')}
+          onOpenSettings={() => setActiveScreen('settings')}
+          activeScreen={activeScreen}
+        />
+      )}
+
+      {/* Desktop/Tablet Horizontal Navigation Bar on non-camera views */}
+      {activeScreen !== 'camera' && (
+        <div className="hidden md:block bg-slate-900 border-b border-slate-800 px-4 py-1.5">
+        <div className="max-w-6xl mx-auto flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setActiveScreen('camera')}
+              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-colors ${
+                activeScreen === 'camera'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Camera className="w-4 h-4" />
+              <span>1. GPS Camera</span>
+            </button>
+
+            <button
+              onClick={() => setActiveScreen('live_location')}
+              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-colors ${
+                activeScreen === 'live_location'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Navigation className="w-4 h-4" />
+              <span>2. Live Location</span>
+            </button>
+
+            <button
+              onClick={() => setActiveScreen('google_maps')}
+              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-colors ${
+                activeScreen === 'google_maps'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <MapIcon className="w-4 h-4" />
+              <span>3. Google Maps</span>
+            </button>
+
+            <button
+              onClick={() => setActiveScreen('gallery')}
+              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-colors ${
+                activeScreen === 'gallery'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Images className="w-4 h-4" />
+              <span>4. Photo Gallery ({photos.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveScreen('history')}
+              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-colors ${
+                activeScreen === 'history'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>5. GPS Photo History</span>
+            </button>
+          </div>
+
+          <button
+            onClick={() => setActiveScreen('dashboard')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-colors ${
+              activeScreen === 'dashboard'
+                ? 'bg-slate-800 text-sky-400 border border-slate-700'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>Dashboard</span>
+          </button>
+        </div>
+      </div>
+      )}
 
       {/* Screen Router */}
       <main className="flex-1 min-h-0 flex flex-col">
@@ -171,31 +200,10 @@ export default function App() {
             language={settings.language}
             location={location}
             address={address}
-            workers={workers}
-            categories={categories}
             settings={settings}
-            selectedWorkerId={selectedWorkerId}
-            onSelectWorkerId={setSelectedWorkerId}
-            selectedCategoryId={selectedCategoryId}
-            onSelectCategoryId={setSelectedCategoryId}
-            selectedWard={selectedWard}
-            onSelectWard={setSelectedWard}
             onRefreshGps={handleRefreshGps}
             onPhotoSaved={loadData}
-            onBack={() => setActiveScreen('settings')}
             onOpenSettings={() => setActiveScreen('settings')}
-          />
-        )}
-
-        {activeScreen === 'settings' && (
-          <SettingsView
-            language={settings.language}
-            settings={settings}
-            workers={workers}
-            categories={categories}
-            onSaveSettings={(s) => setSettings(s)}
-            onRefreshAllData={loadData}
-            onBack={() => setActiveScreen('camera')}
             onNavigate={(screen) => setActiveScreen(screen)}
           />
         )}
@@ -205,41 +213,29 @@ export default function App() {
             language={settings.language}
             location={location}
             address={address}
-            workers={workers}
-            categories={categories}
             photosCount={photos.length}
             settings={settings}
-            selectedWorkerId={selectedWorkerId}
-            onSelectWorkerId={setSelectedWorkerId}
-            selectedCategoryId={selectedCategoryId}
-            onSelectCategoryId={setSelectedCategoryId}
-            selectedWard={selectedWard}
-            onSelectWard={setSelectedWard}
             onRefreshGps={handleRefreshGps}
             onNavigate={(screen) => setActiveScreen(screen)}
           />
         )}
 
-        {activeScreen === 'workers' && (
-          <WorkerManager
+        {activeScreen === 'live_location' && (
+          <LiveLocationView
             language={settings.language}
-            workers={workers}
-            categories={categories}
-            selectedWorkerId={selectedWorkerId}
-            onSelectWorkerId={setSelectedWorkerId}
-            onRefresh={loadData}
-            onBack={() => setActiveScreen('settings')}
+            location={location}
+            address={address}
+            onRefreshGps={handleRefreshGps}
+            onOpenCamera={() => setActiveScreen('camera')}
           />
         )}
 
-        {activeScreen === 'categories' && (
-          <CategoryManager
+        {activeScreen === 'google_maps' && (
+          <GoogleMapView
             language={settings.language}
-            categories={categories}
-            selectedCategoryId={selectedCategoryId}
-            onSelectCategoryId={setSelectedCategoryId}
-            onRefresh={loadData}
-            onBack={() => setActiveScreen('settings')}
+            location={location}
+            photos={photos}
+            onOpenCamera={() => setActiveScreen('camera')}
           />
         )}
 
@@ -247,10 +243,9 @@ export default function App() {
           <PhotoGallery
             language={settings.language}
             photos={photos}
-            workers={workers}
-            categories={categories}
             onRefresh={loadData}
-            onBack={() => setActiveScreen('settings')}
+            onBack={() => setActiveScreen('dashboard')}
+            onOpenCamera={() => setActiveScreen('camera')}
           />
         )}
 
@@ -258,31 +253,32 @@ export default function App() {
           <LocationHistoryView
             language={settings.language}
             photos={photos}
-            onBack={() => setActiveScreen('settings')}
+            onBack={() => setActiveScreen('dashboard')}
+            onOpenCamera={() => setActiveScreen('camera')}
           />
         )}
 
-        {activeScreen === 'reports' && (
-          <ReportsView
+        {activeScreen === 'settings' && (
+          <SettingsView
             language={settings.language}
-            photos={photos}
-            workers={workers}
-            categories={categories}
-            onBack={() => setActiveScreen('settings')}
+            settings={settings}
+            onSaveSettings={(s) => setSettings(s)}
+            onBack={() => setActiveScreen('camera')}
+            onNavigate={(screen) => setActiveScreen(screen)}
           />
         )}
       </main>
 
-      {/* Bottom Sticky Mobile Dock */}
+      {/* Bottom Sticky Mobile Navigation Bar */}
       {activeScreen !== 'camera' && (
         <nav
-          className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-3 py-2 flex items-center justify-around shadow-2xl"
-          aria-label="Bottom Quick Navigation"
+          className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-2 py-2 flex items-center justify-around shadow-2xl"
+          aria-label="Bottom Navigation"
         >
           <button
             onClick={() => setActiveScreen('camera')}
             className={`flex flex-col items-center gap-1 p-1 ${
-              activeScreen === 'camera' ? 'text-blue-400 font-bold' : 'text-slate-400'
+              activeScreen === 'camera' ? 'text-sky-400 font-bold' : 'text-slate-400'
             }`}
           >
             <Camera className="w-5 h-5" />
@@ -290,43 +286,43 @@ export default function App() {
           </button>
 
           <button
+            onClick={() => setActiveScreen('live_location')}
+            className={`flex flex-col items-center gap-1 p-1 ${
+              activeScreen === 'live_location' ? 'text-sky-400 font-bold' : 'text-slate-400'
+            }`}
+          >
+            <Navigation className="w-5 h-5" />
+            <span className="text-[10px]">Live GPS</span>
+          </button>
+
+          <button
+            onClick={() => setActiveScreen('google_maps')}
+            className={`flex flex-col items-center gap-1 p-1 ${
+              activeScreen === 'google_maps' ? 'text-sky-400 font-bold' : 'text-slate-400'
+            }`}
+          >
+            <MapIcon className="w-5 h-5" />
+            <span className="text-[10px]">17 Wards</span>
+          </button>
+
+          <button
             onClick={() => setActiveScreen('gallery')}
             className={`flex flex-col items-center gap-1 p-1 ${
-              activeScreen === 'gallery' ? 'text-blue-400 font-bold' : 'text-slate-400'
+              activeScreen === 'gallery' ? 'text-sky-400 font-bold' : 'text-slate-400'
             }`}
           >
             <Images className="w-5 h-5" />
-            <span className="text-[10px]">Photos</span>
+            <span className="text-[10px]">Gallery</span>
           </button>
 
           <button
-            onClick={() => setActiveScreen('settings')}
-            className="flex flex-col items-center -mt-5"
-          >
-            <div className="w-13 h-13 rounded-full bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center text-white shadow-lg shadow-blue-500/40 p-3 hover:scale-105 active:scale-95 transition-all">
-              <SettingsIcon className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] text-sky-400 font-bold mt-1">Settings</span>
-          </button>
-
-          <button
-            onClick={() => setActiveScreen('workers')}
+            onClick={() => setActiveScreen('history')}
             className={`flex flex-col items-center gap-1 p-1 ${
-              activeScreen === 'workers' ? 'text-blue-400 font-bold' : 'text-slate-400'
+              activeScreen === 'history' ? 'text-sky-400 font-bold' : 'text-slate-400'
             }`}
           >
-            <Users className="w-5 h-5" />
-            <span className="text-[10px]">Workers</span>
-          </button>
-
-          <button
-            onClick={() => setActiveScreen('reports')}
-            className={`flex flex-col items-center gap-1 p-1 ${
-              activeScreen === 'reports' ? 'text-blue-400 font-bold' : 'text-slate-400'
-            }`}
-          >
-            <FileText className="w-5 h-5" />
-            <span className="text-[10px]">Reports</span>
+            <History className="w-5 h-5" />
+            <span className="text-[10px]">History</span>
           </button>
         </nav>
       )}

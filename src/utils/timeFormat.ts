@@ -1,6 +1,7 @@
 /**
- * Time and date formatting utilities for Sumit Boss.
- * Strictly adheres to 12-hour format with AM/PM (e.g., 08:54:15 PM, 09:15:30 AM).
+ * Time and date formatting utilities for SUMIT BOSS.
+ * Strictly adheres to 12-hour format with AM/PM (e.g., 08:54:15 PM, 09:15:30 AM)
+ * and DD-MM-YYYY date format.
  */
 
 export function formatTime12Hour(dateInput: Date | number = new Date()): string {
@@ -15,18 +16,21 @@ export function formatTime12Hour(dateInput: Date | number = new Date()): string 
   return `${hoursStr}:${minutesStr}:${secondsStr} ${period}`;
 }
 
-export function formatDateString(dateInput: Date | number = new Date()): string {
+export function formatDateDashed(dateInput: Date | number = new Date()): string {
   const date = typeof dateInput === 'number' ? new Date(dateInput) : dateInput;
   const pad = (n: number) => n.toString().padStart(2, '0');
   const day = pad(date.getDate());
   const month = pad(date.getMonth() + 1);
   const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
+  return `${day}-${month}-${year}`;
+}
+
+export function formatDateString(dateInput: Date | number = new Date()): string {
+  return formatDateDashed(dateInput);
 }
 
 /**
  * Normalizes any timestamp or time string into 12-hour format with AM/PM.
- * Converts legacy 24-hour strings (e.g., '20:54:15' -> '08:54:15 PM') cleanly.
  */
 export function normalizeTime12Hour(timeStr?: string, timestamp?: number): string {
   if (timestamp) {

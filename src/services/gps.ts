@@ -99,14 +99,15 @@ export class GpsService {
 
     // Dynamic point-in-polygon ward determination based on verified coordinates
     if (loc.latitude && loc.longitude) {
-      const wardMatch = this.detectWard(loc.latitude, loc.longitude);
+      const wardMatch = this.detectWard(loc.latitude, loc.longitude, loc.accuracy);
       loc.wardNumber = wardMatch.wardNumber;
       loc.wardMatchResult = wardMatch;
     } else {
-      loc.wardNumber = 'Ward Not Identified';
+      loc.wardNumber = 'Ward Not Verified';
       loc.wardMatchResult = {
-        wardNumber: 'Ward Not Identified',
-        status: 'not_identified',
+        wardNumber: 'Ward Not Verified',
+        status: 'not_verified',
+        verificationStatus: 'UNVERIFIED',
         confidence: 'none',
       };
     }
@@ -430,8 +431,8 @@ export class GpsService {
    * If boundary data is missing or coordinates are outside boundaries,
    * returns 'Ward Not Identified' instead of a hardcoded ward.
    */
-  public detectWard(latitude: number, longitude: number): WardMatchResult {
-    return wardBoundaryService.detectWard(latitude, longitude);
+  public detectWard(latitude: number, longitude: number, accuracyMeters?: number): WardMatchResult {
+    return wardBoundaryService.detectWard(latitude, longitude, accuracyMeters);
   }
 
   /**

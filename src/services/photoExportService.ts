@@ -2,7 +2,31 @@ import { registerPlugin, Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
+interface NativeStampOptions {
+  base64: string;
+  filename: string;
+  addressText: string;
+  wardNumber: string;
+  wardName?: string;
+  gpsCoordsText: string;
+  pinCodeText: string;
+  dateText: string;
+  timeText: string;
+  latitude?: number;
+  longitude?: number;
+  mapTileBase64?: string | null;
+}
+
 interface SumitMediaPluginInterface {
+  stampAndSavePhoto(options: NativeStampOptions): Promise<{
+    success: boolean;
+    stampedDataUrl: string;
+    width?: number;
+    height?: number;
+    uri?: string;
+    filePath?: string;
+    message?: string;
+  }>;
   savePhotoToGallery(options: {
     base64: string;
     filename: string;
@@ -22,6 +46,57 @@ export interface ExportResult {
 }
 
 export class PhotoExportService {
+  /**
+   * Dedicated Native Android Photo-Stamping Engine call.
+   * Renders the complete GPS information panel directly onto the original full-resolution
+   * camera Android Bitmap using native Canvas, Paint, and subpixel text rendering.
+   */
+  public static async stampAndSaveNative(options: {
+    rawBase64: string;
+    filename: string;
+    addressText: string;
+    wardNumber: string;
+    wardName?: string;
+    gpsCoordsText: string;
+    pinCodeText: string;
+    dateText: string;
+    timeText: string;
+    latitude?: number;
+    longitude?: number;
+    mapTileBase64?: string | null;
+  }): Promise<{ success: boolean; stampedDataUrl: string; message: string; uri?: string; filePath?: string }> {
+    const cleanBase64 = this.extractBase64(options.rawBase64);
+    const safeFilename = options.filename.endsWith('.jpg') || options.filename.endsWith('.jpeg')
+      ? options.filename
+      : `${options.filename}.jpg`;
+
+    const res = await SumitMedia.stampAndSavePhoto({
+      base64: cleanBase64,
+      filename: safeFilename,
+      addressText: options.addressText,
+      wardNumber: options.wardNumber,
+      wardName: options.wardName || '',
+      gpsCoordsText: options.gpsCoordsText,
+      pinCodeText: options.pinCodeText,
+      dateText: options.dateText,
+      timeText: options.timeText,
+      latitude: options.latitude,
+      longitude: options.longitude,
+      mapTileBase64: options.mapTileBase64 ? this.extractBase64(options.mapTileBase64) : null,
+    });
+
+    if (!res || !res.success || !res.stampedDataUrl) {
+      throw new Error(res?.message || 'Native photo stamping failed');
+    }
+
+    return {
+      success: true,
+      stampedDataUrl: res.stampedDataUrl,
+      message: res.message || 'Photo stamped with native HD typography and saved to Gallery.',
+      uri: res.uri,
+      filePath: res.filePath,
+    };
+  }
   /**
    * Helper to strip data URL prefix and return clean base64 string
    */
@@ -151,6 +226,18 @@ export class PhotoExportService {
    * - Photo image only (NO automatic caption/text)
    * - Direct WhatsApp intent if installed, with system chooser fallback
    */
+  public static async sharePhotoViaWhatsApp(options: {
+    photoDataUrl: string;
+    filename: string;
+    addressText?: string;
+    wardNumber?: string;
+    latitude?: number;
+    longitude?: number;
+    timestampStr?: string;
+  }): Promise<ExportResult> {
+    return this.sharePhotoToWhatsApp(options.photoDataUrl, options.filename);
+  }
+
   public static async sharePhotoToWhatsApp(
     photoDataUrl: string,
     filename: string
