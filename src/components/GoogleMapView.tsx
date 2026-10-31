@@ -109,6 +109,17 @@ export const GoogleMapView: React.FC<GoogleMapViewProps> = ({
             <span>Photos ({photos.length})</span>
           </button>
 
+          {/* Open in Google Maps */}
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${userLat},${userLng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-md transition-all border border-emerald-500/50"
+          >
+            <Navigation className="w-3.5 h-3.5 text-emerald-200" />
+            <span>Open in Google Maps</span>
+          </a>
+
           {/* Camera Launch */}
           <button
             onClick={onOpenCamera}

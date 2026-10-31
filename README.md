@@ -1,179 +1,144 @@
-# Sumit Boss — GPS Map Camera & Worker Documentation Android App
+# SUMIT BOSS — GPS Camera & Municipal Ward Documentation Android App
 
-**Sumit Boss** is a professional Android application built for municipal field supervisors, sanitation inspectors, and field documentation teams. It captures high-resolution location-stamped photographs with baked-in verified GPS coordinates, reverse-geocoded postal addresses, worker details, and work categories, and exports official A4 PDF audit reports.
+**SUMIT BOSS** (`com.sumitboss.gpscamera`) is an Android application designed for high-precision field documentation, GPS camera photo stamping, and municipal administration. Built for Tivsa Nagar Panchayat (LGD Code: 276289), Dist. Amravati, Maharashtra.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Core Features
 
-1. **GPS Map Camera with Baked-In Watermark Overlays**
-   - High-resolution camera viewfinder supporting front/rear camera toggle and torch/flash controls.
-   - Watermarks are burned directly into the saved image canvas (not just an on-screen preview).
-   - 4 Professional Watermark Layouts:
-     - **Classic Bottom Banner** (Default high-contrast dual-column audit layout)
-     - **Modern Glassmorphism Card** (Floating badges and metadata)
-     - **Sidebar Compact** (Left/right vertical telemetry rail)
-     - **Full Technical Inspector** (Audit-grade telemetry breakdown with accuracy indicators)
-   - Optional mini-radar/grid map badge embedded in the stamp.
-   - Saves both stamped image and optional unmodified original image.
+1. **Native High-Resolution Photo Stamping Engine (`ImageStampModule`)**
+   - Composites telemetry directly onto the full camera sensor Bitmap buffer using native Android `Canvas`, `Paint`, `Typeface`, and subpixel text rendering.
+   - Eliminates WebView preview scaling blur; text, badges, vector icons, and map thumbnails are rendered at crystal-clear native sensor resolution.
+   - Stamped output is saved directly into Android MediaStore under `Pictures/SUMIT BOSS` at JPEG 100% quality.
 
-2. **Accurate GPS & Strict Postal PIN Code Integrity**
-   - Live GPS tracking via device Geolocation and Android Fused Location Provider.
-   - Real-time display of horizontal accuracy in meters (±X m) and fix timestamps.
-   - Configurable GPS accuracy threshold with low-accuracy warnings (*"GPS accuracy is low. Move to an open area and try again"*).
-   - OpenStreetMap Nominatim reverse geocoding resolving Building, Road, Locality/Village, Taluka/Tehsil, District, State, and PIN code.
-   - **Strict PIN Code Verification**: Validates standard 6-digit Indian postal PIN codes (`/^[1-9][0-9]{5}$/`). Never invents or fabricates PIN codes. If unavailable, clearly displays *"PIN code unavailable"*.
-   - Specialized handling for Maharashtra administrative boundaries (Taluka, District, State).
+2. **Official 17 Municipal Ward Point-in-Polygon Detection**
+   - **Target Municipality**: Tivsa Nagar Panchayat (LGD Code: 276289), Dist. Amravati, Maharashtra.
+   - **Total Wards**: 17 official delimited wards.
+   - **Ground-Truth Aligned**: Anandwadi and Gaothan North mapped accurately to **Ward No. 1**.
+   - If coordinates fall outside the verified municipal polygons, status clearly displays `Ward verification pending`.
 
-3. **Worker Management**
-   - Complete CRUD operations: Add, edit, search, and delete workers with confirmation.
-   - Fields: Worker ID, Name, Mobile Number, Designation, Work Category, Ward Number, Area, Joining Date, and Notes.
-   - 1-tap worker activation before taking photos.
+3. **Ultra-Precise GPS & Road Corridor Sanitization**
+   - Live GPS tracking via Android Fused Location Provider with horizontal accuracy indicators (±Xm).
+   - Sanitized reverse geocoding identifying local corridors such as **Satar Gaon Road / Chandur Bazar Road** in **Anandwadi, Tivsa Nagar Panchayat**, filtering out distant rural village mislabels.
+   - Enforces verified Indian postal PIN code **444903**.
 
-4. **Work Category Management**
-   - Pre-configured municipal categories:
-     - **Drain Cleaning** (*नाली साफसफाई* / *नाली सफाई*)
-     - **Sweeping** (*झाडू मारण्याचे काम* / *झाड़ू लगाना*)
-     - **Road Cleaning** (*रस्ता साफसफाई* / *सड़क सफाई*)
-     - **Garbage Collection** (*कचरा संकलन* / *कचरा उठाना*)
-     - **Sanitation Work** (*स्वच्छता कार्य*)
-     - **Other Work** (*इतर काम* / *अन्य कार्य*)
-   - Editable, customizable, and filterable.
+4. **Studio-Quality Neural AI Marathi Welcome Voice**
+   - Dedicated AI voice system powered by neural text-to-speech.
+   - Automatically plays on cold launch:
+     > **"सुमित बॉस ॲप्लिकेशनमध्ये आपले स्वागत आहे."**
+   - Plays natively via Android `MediaPlayer` reading from pre-bundled assets or persistent local cache without requiring active internet connectivity or falling back to robotic Google TTS.
+   - Session-guarded to prevent repeating across screen changes.
 
-5. **Saved Photos Gallery & Location History**
-   - Local offline database storing photo records and thumbnails.
-   - Multi-filter support: Filter by Date Range, Worker, Work Category, and Ward Number.
-   - Interactive Leaflet map displaying GPS pins for every captured photo.
-   - Fullscreen Photo Inspector with side-by-side Stamped vs. Original toggle.
-   - Image export with standardized naming: `SumitBoss_YYYYMMDD_HHMMSS.jpg`.
-
-6. **Official A4 PDF Audit Reports**
-   - Generates multi-page formatted A4 PDF reports with photo thumbnails, timestamps, worker names, categories, wards, GPS coordinates, accuracy, and verified addresses.
-   - Printable and shareable via native Android share sheet (including WhatsApp).
-
-7. **Multi-Language Support & Accessibility**
-   - Full UI localization in **English**, **मराठी (Marathi)**, and **हिंदी (Hindi)**.
-   - Accessibility-first with large touch targets, high contrast, and ARIA labels.
-   - Text-to-Speech (TTS) voice announcements (*"Welcome to Sumit Boss"*, *"Camera opened"*, *"GPS location acquired"*, *"Photo captured successfully"*, *"GPS accuracy is low"*).
-
-8. **Offline Functionality & Data Safety**
-   - Full offline operation: captures photos and coordinates locally even without cellular data.
-   - Full JSON database export and restore functionality to prevent data loss.
+5. **Interactive GIS Map & Google Maps Integration**
+   - Displays all 17 municipal ward boundary polygons overlaid on satellite imagery.
+   - Direct **"Open in Google Maps"** navigation button to launch coordinates directly in Google Maps.
 
 ---
 
 ## 📁 Repository Structure
 
 ```
-.
+SUMIT-BOSS/
 ├── .github/
 │   └── workflows/
-│       └── android-build.yml       # GitHub Actions workflow for building Android APK
+│       └── android-build.yml       # GitHub Actions automated APK build workflow
 ├── android/
 │   ├── app/
-│   │   ├── build.gradle            # App-level Gradle build configuration
+│   │   ├── build.gradle            # App-level build config with release signing
 │   │   └── src/
 │   │       └── main/
-│   │           ├── AndroidManifest.xml # Permissions (CAMERA, GPS, STORAGE)
-│   │           ├── java/com/sumitboss/gpscamera/MainActivity.java
-│   │           └── res/            # Strings, Colors, Themes, and Adaptive Icons
-│   ├── build.gradle                # Root Gradle configuration
-│   ├── settings.gradle             # Project module definitions
+│   │           ├── AndroidManifest.xml # Permissions (CAMERA, GPS, MEDIASTORE)
+│   │           ├── assets/
+│   │           │   └── welcome_marathi.wav # Pre-bundled 24kHz neural Marathi audio
+│   │           ├── java/com/sumitboss/gpscamera/
+│   │           │   ├── MainActivity.java     # BridgeActivity with plugin registration
+│   │           │   ├── ImageStampModule.java # Native HD Android Canvas/Paint module
+│   │           │   ├── SumitVoicePlugin.java # Native Neural AI Voice module
+│   │           │   └── SumitMediaPlugin.java # Native MediaStore & Gallery saver
+│   │           └── res/            # Strings ("SUMIT BOSS"), icons, and themes
+│   ├── build.gradle                # Root project buildscript (AGP 8.7.3)
+│   ├── settings.gradle             # Module settings
 │   ├── gradle.properties           # Memory and AndroidX flags
-│   └── gradlew                     # Gradle executable wrapper
-├── capacitor.config.json           # Capacitor Android bridge configuration
+│   ├── gradlew                     # Executable Gradle wrapper (Linux/macOS)
+│   ├── gradlew.bat                 # Executable Gradle wrapper (Windows)
+│   └── gradle/
+│       └── wrapper/
+│           ├── gradle-wrapper.jar  # Gradle distribution launcher
+│           └── gradle-wrapper.properties # Gradle 8.11.1
 ├── src/
-│   ├── components/                 # React UI components
-│   │   ├── CameraView.tsx          # Real camera preview, overlay & canvas stamping
-│   │   ├── Dashboard.tsx           # Home dashboard with 8 primary action cards
-│   │   ├── MapView.tsx             # Interactive Leaflet GPS map
-│   │   ├── WorkerManager.tsx       # Worker roster management
-│   │   ├── CategoryManager.tsx     # Work categories management
-│   │   ├── PhotoGallery.tsx        # Photo gallery & full-screen inspector
-│   │   ├── LocationHistoryView.tsx # Map marker trail & history timeline
-│   │   ├── ReportsView.tsx         # A4 PDF report exporter
-│   │   └── SettingsView.tsx        # Application settings & DB backup
-│   ├── i18n/
-│   │   └── translations.ts         # English, Marathi, Hindi translations
+│   ├── components/                 # React UI components (CameraView, GoogleMapView, etc.)
 │   ├── services/
-│   │   ├── db.ts                   # IndexedDB storage and seed data
-│   │   ├── gps.ts                  # Device GPS & Nominatim reverse geocoder
-│   │   ├── photoStamper.ts         # High-resolution HTML5 canvas watermark engine
-│   │   ├── pdfReport.ts            # A4 PDF generation service
-│   │   └── tts.ts                  # Web Speech Synthesis TTS engine
-│   ├── types/                      # TypeScript data definitions
-│   ├── App.tsx                     # Main application container
-│   ├── index.css                   # Tailwind styles and mobile scrollbars
-│   └── main.tsx                    # React entry point
-└── package.json
+│   │   ├── gps.ts                  # High-accuracy GPS & address sanitization
+│   │   ├── wardBoundaryService.ts  # Turf.js 17-Ward GIS point-in-polygon engine
+│   │   ├── photoExportService.ts   # Calls ImageStampModule native plugin
+│   │   └── tts.ts                  # Neural welcome voice client
+│   └── types/                      # TypeScript definitions
+├── public/
+│   └── assets/audio/
+│       └── welcome_marathi.wav     # Studio neural Marathi WAV audio
+├── capacitor.config.json           # Capacitor Android configuration
+├── package.json                    # Dependencies & build scripts
+├── package-lock.json               # Deterministic dependency lockfile
+├── tsconfig.json                   # TypeScript compiler options
+├── vite.config.ts                  # Vite build configuration
+└── README.md
 ```
 
 ---
 
-## 🚀 Building the Android APK
+## 🚀 Automated APK Generation via GitHub Actions
 
-### Option A: Automated Build via GitHub Actions (Recommended)
+This repository is pre-configured with a continuous integration workflow: **`.github/workflows/android-build.yml`**.
 
-1. **Commit and push** the code to your GitHub repository:
+### How to Upload to GitHub and Generate APK:
+
+1. **Push or Upload this project to a new GitHub repository**:
    ```bash
+   git init
    git add .
-   git commit -m "Build Sumit Boss complete Android application"
-   git push origin main
+   git commit -m "Initial commit of complete SUMIT BOSS Android project"
+   git branch -M main
+   git remote add origin https://github.com/<YOUR-USERNAME>/<YOUR-REPO-NAME>.git
+   git push -u origin main
    ```
-2. Navigate to the **Actions** tab in your GitHub repository.
-3. Select the workflow titled **Build Sumit Boss Android APK**.
-4. The build will execute automatically on push to `main` (or you can click **Run workflow** manually).
-5. Once the build finishes successfully (typically in 2-3 minutes), scroll down to the **Artifacts** section at the bottom of the workflow run summary.
-6. Download **`sumit-boss-gps-map-camera-apk`**, extract the ZIP archive, and install **`SumitBoss-GPS-Map-Camera.apk`** on your Android device.
 
-### Option B: Local Build via Android Studio
+2. **Trigger the Workflow**:
+   - The build runs **automatically** on every push to `main`.
+   - To trigger manually:
+     1. Open your repository on GitHub.
+     2. Click on the **Actions** tab.
+     3. In the left sidebar, click **Build SUMIT BOSS Android APK**.
+     4. Click **Run workflow** (select `release` or `debug`).
 
-1. **Install dependencies and build web assets**:
-   ```bash
-   npm install
-   npm run build
-   npx cap sync android
-   ```
-2. **Open the Android project**:
-   - Launch **Android Studio**.
-   - Click **Open** and select the `/android` directory of this repository.
-3. **Build the APK**:
-   - In Android Studio, select **Build** > **Build Bundle(s) / APK(s)** > **Build APK(s)**.
-   - Alternatively, run from terminal:
-     ```bash
-     cd android
-     ./gradlew assembleDebug
-     ```
-   - The generated APK will be located at:
-     `android/app/build/outputs/apk/debug/app-debug.apk`
+3. **Download the Generated APK**:
+   - Once the workflow completes (green checkmark, ~2-3 minutes), click on the completed run.
+   - Scroll down to the **Artifacts** section at the bottom of the page.
+   - Click on **`SUMIT-BOSS-APK`** to download the ZIP file.
+   - Extract the ZIP to obtain **`SUMIT-BOSS-release.apk`**.
 
 ---
 
-## 📱 Installing and Running on Android Device
+## 📱 Sideloading & Installing on Android
 
-1. Copy the generated `.apk` file to your Android phone (via USB cable, Google Drive, or WhatsApp).
-2. On your phone, tap the `.apk` file to install.
-3. If prompted with *"Install unknown apps"*, enable permission for your browser or file manager.
-4. Open **Sumit Boss**.
-5. When prompted, grant:
-   - **Camera permission** (required for capturing photos)
-   - **Location permission (Precise / Fine Location)** (required for GPS coordinates and reverse geocoding)
-   - **Storage / Media permission** (required for saving stamped images to device gallery)
+1. Transfer **`SUMIT-BOSS-release.apk`** to your Android smartphone (via USB, WhatsApp, or Google Drive).
+2. Tap the APK file to install.
+3. If prompted, toggle on **"Allow from this source"** in your phone's installation settings.
+4. Launch **SUMIT BOSS**:
+   - The neural Marathi welcome voice (*"सुमित बॉस ॲप्लिकेशनमध्ये आपले स्वागत आहे."*) will play clearly on initial cold start.
+   - Grant **Camera**, **Precise Location (GPS)**, and **Photos/Media** permissions when prompted.
+5. Photos captured using the camera will be stamped at full camera sensor resolution with the complete SUMIT BOSS telemetry panel and automatically saved to your phone's gallery in the `SUMIT BOSS` album.
 
 ---
 
-## 🧪 Verification & Testing Checklist
+## 🔐 Optional Release Keystore Configuration
 
-- [x] **Application Startup**: Opens smoothly without crashing; branding displayed as **Sumit Boss**.
-- [x] **Home Dashboard**: 8 clearly labelled buttons navigating to all screens with live date/time and GPS status.
-- [x] **Camera Stream**: Supports rear camera, front camera, torch toggle, and anti-duplicate capture lock.
-- [x] **Watermark Baking**: Overlays (Worker, Category, Ward, Lat, Lng, Accuracy, Address, PIN, Date/Time) are permanently rendered into saved JPEG images via HTML5 Canvas.
-- [x] **Strict PIN Code Validation**: Validates 6-digit postal PIN codes; shows *"PIN code unavailable"* if unverified.
-- [x] **Worker Management**: Add, edit, delete, search, and 1-tap select workers for photo stamps.
-- [x] **Work Categories**: Preloaded with Drain Cleaning, Sweeping, Road Cleaning, Garbage Collection, Sanitation Work, Other Work.
-- [x] **Saved Photos Gallery**: Searchable, filterable by worker/category/ward, full-screen inspector, and single-click download.
-- [x] **PDF Reports**: Generates formatted A4 PDF reports with photo thumbnails and field metrics.
-- [x] **Offline Capabilities**: Captures photos and saves metadata locally without requiring an active internet connection.
-- [x] **Multi-Language**: Instant toggle between English, Marathi (मराठी), and Hindi (हिंदी).
-- [x] **Voice TTS**: Speaks events (*"Welcome to Sumit Boss"*, *"Photo captured successfully"*, etc.).
-- [x] **CI/CD Ready**: Authoritative GitHub Actions workflow (`.github/workflows/android-build.yml`) configured for automated APK compilation.
+By default, the workflow produces an installable release APK signed with Android's standard debug key for easy sideloading without errors.
+
+To sign with your own private production keystore for Google Play Store release:
+1. In your GitHub repository, go to **Settings** > **Secrets and variables** > **Actions**.
+2. Add the following repository secrets:
+   - `KEYSTORE_BASE64`: Base64-encoded string of your `.jks` or `.keystore` file (`base64 -w 0 my-release-key.jks`).
+   - `KEYSTORE_PASSWORD`: Password for your keystore.
+   - `KEY_ALIAS`: Key alias name.
+   - `KEY_PASSWORD`: Password for the key alias.
+3. Subsequent workflow runs will automatically detect these secrets and produce a cryptographically signed production APK.

@@ -141,7 +141,7 @@ export class WardBoundaryService {
 
     if (!this.activeDataset || !this.activeDataset.wards || this.activeDataset.wards.length === 0) {
       return {
-        wardNumber: 'Outside Tivsa Nagar Panchayat',
+        wardNumber: 'Ward verification pending',
         status: 'not_verified',
         verificationStatus: 'OUTSIDE MUNICIPALITY',
         confidence: 'none',
@@ -174,7 +174,7 @@ export class WardBoundaryService {
     // 1. Outside municipal ward boundaries
     if (matchingWards.length === 0) {
       return {
-        wardNumber: 'Outside Tivsa Nagar Panchayat',
+        wardNumber: 'Ward verification pending',
         status: 'not_verified',
         verificationStatus: 'OUTSIDE MUNICIPALITY',
         confidence: 'none',

@@ -3,7 +3,8 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
 interface NativeStampOptions {
-  base64: string;
+  base64?: string;
+  photoPath?: string;
   filename: string;
   addressText: string;
   wardNumber: string;
@@ -15,6 +16,39 @@ interface NativeStampOptions {
   latitude?: number;
   longitude?: number;
   mapTileBase64?: string | null;
+  gpsData?: {
+    addressText: string;
+    wardNumber: string;
+    wardName?: string;
+    gpsCoordsText: string;
+    pinCodeText: string;
+    dateText: string;
+    timeText: string;
+    latitude?: number;
+    longitude?: number;
+    mapTileBase64?: string | null;
+  };
+}
+
+interface ImageStampModulePluginInterface {
+  stampPhoto(options: NativeStampOptions): Promise<{
+    success: boolean;
+    stampedDataUrl: string;
+    width?: number;
+    height?: number;
+    uri?: string;
+    filePath?: string;
+    message?: string;
+  }>;
+  stampAndSavePhoto(options: NativeStampOptions): Promise<{
+    success: boolean;
+    stampedDataUrl: string;
+    width?: number;
+    height?: number;
+    uri?: string;
+    filePath?: string;
+    message?: string;
+  }>;
 }
 
 interface SumitMediaPluginInterface {
@@ -37,6 +71,7 @@ interface SumitMediaPluginInterface {
   }): Promise<{ success: boolean; isWhatsAppInstalled?: boolean }>;
 }
 
+const ImageStampModule = registerPlugin<ImageStampModulePluginInterface>('ImageStampModule');
 const SumitMedia = registerPlugin<SumitMediaPluginInterface>('SumitMedia');
 
 export interface ExportResult {
@@ -70,7 +105,7 @@ export class PhotoExportService {
       ? options.filename
       : `${options.filename}.jpg`;
 
-    const res = await SumitMedia.stampAndSavePhoto({
+    const stampPayload: NativeStampOptions = {
       base64: cleanBase64,
       filename: safeFilename,
       addressText: options.addressText,
@@ -83,7 +118,38 @@ export class PhotoExportService {
       latitude: options.latitude,
       longitude: options.longitude,
       mapTileBase64: options.mapTileBase64 ? this.extractBase64(options.mapTileBase64) : null,
-    });
+      gpsData: {
+        addressText: options.addressText,
+        wardNumber: options.wardNumber,
+        wardName: options.wardName || '',
+        gpsCoordsText: options.gpsCoordsText,
+        pinCodeText: options.pinCodeText,
+        dateText: options.dateText,
+        timeText: options.timeText,
+        latitude: options.latitude,
+        longitude: options.longitude,
+        mapTileBase64: options.mapTileBase64 ? this.extractBase64(options.mapTileBase64) : null,
+      },
+    };
+
+    // 1. Primary: Use dedicated ImageStampModule native plugin
+    try {
+      const res = await ImageStampModule.stampAndSavePhoto(stampPayload);
+      if (res && res.success && res.stampedDataUrl) {
+        return {
+          success: true,
+          stampedDataUrl: res.stampedDataUrl,
+          message: res.message || 'Photo stamped with native HD typography via ImageStampModule.',
+          uri: res.uri,
+          filePath: res.filePath,
+        };
+      }
+    } catch (pluginErr) {
+      console.warn('ImageStampModule call failed, falling back to SumitMedia:', pluginErr);
+    }
+
+    // 2. Secondary fallback: SumitMedia native plugin
+    const res = await SumitMedia.stampAndSavePhoto(stampPayload);
 
     if (!res || !res.success || !res.stampedDataUrl) {
       throw new Error(res?.message || 'Native photo stamping failed');

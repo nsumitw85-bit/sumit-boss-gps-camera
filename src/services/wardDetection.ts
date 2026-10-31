@@ -728,7 +728,7 @@ export function detectWardDetailsFromLocation(
   // Outside Tivsa municipal limits
   if (matchedFeatures.length === 0) {
     return {
-      wardNumber: 'Outside Tivsa Nagar Panchayat',
+      wardNumber: 'Ward verification pending',
       status: 'not_verified',
       verificationStatus: 'OUTSIDE MUNICIPALITY',
       confidence: 'none',

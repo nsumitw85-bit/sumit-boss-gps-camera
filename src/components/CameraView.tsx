@@ -86,7 +86,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
 
   // Dynamic point-in-polygon Ward detection for Tivsa Nagar Panchayat
   const [detectedWardResult, setDetectedWardResult] = useState<WardMatchResult>({
-    wardNumber: 'Ward Not Verified',
+    wardNumber: 'Ward verification pending',
     status: 'not_verified',
     verificationStatus: 'UNVERIFIED',
     confidence: 'none',
@@ -98,7 +98,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
       setDetectedWardResult(match);
     } else {
       setDetectedWardResult({
-        wardNumber: 'Ward Not Verified',
+        wardNumber: 'Ward verification pending',
         status: 'not_verified',
         verificationStatus: 'UNVERIFIED',
         confidence: 'none',

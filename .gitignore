@@ -18,3 +18,9 @@ android/captures/
 local.properties
 .idea/
 *.iml
+
+# Ensure Gradle Wrapper & Assets are never ignored
+!gradle/wrapper/gradle-wrapper.jar
+!android/gradle/wrapper/gradle-wrapper.jar
+!*.wav
+!*.geojson

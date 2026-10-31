@@ -8,10 +8,11 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SumitMediaPlugin.class);
         registerPlugin(SumitVoicePlugin.class);
+        registerPlugin(ImageStampModule.class);
         super.onCreate(savedInstanceState);
 
-        // Automatically start the welcome voice ("Welcome to Sumit Boss.") when app opens
-        SumitVoicePlugin.startWelcomeVoice(this.getApplicationContext());
+        // Automatically start the AI neural welcome voice ("सुमित बॉस ॲप्लिकेशनमध्ये आपले स्वागत आहे.") when app opens
+        SumitVoicePlugin.playWelcomeVoice(this.getApplicationContext());
     }
 
     @Override

@@ -98,13 +98,34 @@ export class VoiceService {
     }
   }
 
+  private welcomeAudioElement: HTMLAudioElement | null = null;
+
   /**
-   * Play the official English welcome message: "Welcome to Sumit Boss."
+   * Play the official AI neural Marathi welcome message:
+   * "सुमित बॉस ॲप्लिकेशनमध्ये आपले स्वागत आहे."
    * Guaranteed to play once per app launch session.
+   * Completely replaces standard robotic Google Text-to-Speech with studio-grade neural AI audio.
    */
   async announceWelcomeOnLaunch(force: boolean = false): Promise<void> {
     if (!this.enabled) return;
 
+    // Check session storage guard to ensure single play across screen navigation
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        const played = window.sessionStorage.getItem('sumit_boss_welcome_played');
+        if (played === 'true' && !force) {
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (this.hasPlayedWelcomeSession && !force) {
+      return;
+    }
+
+    // 1. Android Native APK: Call dedicated SumitVoice Capacitor Plugin (MediaPlayer with cached/bundled WAV)
     if (Capacitor.isNativePlatform()) {
       try {
         const result = await SumitVoice.playWelcome({ force });
@@ -112,27 +133,60 @@ export class VoiceService {
           return;
         }
         this.hasPlayedWelcomeSession = true;
+        try {
+          window.sessionStorage?.setItem('sumit_boss_welcome_played', 'true');
+        } catch {}
         return;
       } catch (e) {
-        console.warn('Native welcome voice failed, attempting web fallback:', e);
+        console.warn('Native SumitVoice plugin playWelcome error:', e);
       }
     }
 
-    if (this.hasPlayedWelcomeSession && !force) {
-      return;
-    }
-
+    // 2. Web / Browser / Preview: Play bundled AI neural Marathi audio (welcome_marathi.wav)
     this.hasPlayedWelcomeSession = true;
-    this.speak('Welcome to Sumit Boss.', 'en');
+    try {
+      window.sessionStorage?.setItem('sumit_boss_welcome_played', 'true');
+    } catch {}
+
+    const playWebAudio = () => {
+      try {
+        if (!this.welcomeAudioElement) {
+          this.welcomeAudioElement = new Audio('/assets/audio/welcome_marathi.wav');
+          this.welcomeAudioElement.preload = 'auto';
+        }
+        this.welcomeAudioElement.volume = this.volume;
+        this.welcomeAudioElement.currentTime = 0;
+        const playPromise = this.welcomeAudioElement.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.debug('Autoplay policy prevented instant audio play, queuing for first user touch:', err);
+            // Autoplay policy fallback: attach one-time user gesture listener
+            const triggerOnInteraction = () => {
+              this.welcomeAudioElement?.play().catch(() => {});
+              window.removeEventListener('pointerdown', triggerOnInteraction);
+              window.removeEventListener('click', triggerOnInteraction);
+              window.removeEventListener('touchstart', triggerOnInteraction);
+            };
+            window.addEventListener('pointerdown', triggerOnInteraction, { once: true });
+            window.addEventListener('click', triggerOnInteraction, { once: true });
+            window.addEventListener('touchstart', triggerOnInteraction, { once: true });
+          });
+        }
+      } catch (audioErr) {
+        console.warn('HTML5 Audio playback error:', audioErr);
+      }
+    };
+
+    playWebAudio();
   }
 
   announceEvent(
     event: 'welcome' | 'camera_opened' | 'gps_acquired' | 'photo_captured' | 'photo_saved' | 'gps_low',
-    lang: Language = 'en',
+    lang: Language = 'mr',
     forceManual: boolean = false
   ) {
     if (event === 'welcome') {
-      // The welcome message is explicitly "Welcome to Sumit Boss." in English
+      // The welcome message is exclusively the studio neural Marathi audio
       this.announceWelcomeOnLaunch(forceManual);
       return;
     }

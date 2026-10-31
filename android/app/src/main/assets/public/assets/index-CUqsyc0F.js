@@ -13520,7 +13520,7 @@ function detectWardDetailsFromLocation(lat, lng, accuracyMeters) {
 		});
 	} catch {}
 	if (matchedFeatures.length === 0) return {
-		wardNumber: "Outside Tivsa Nagar Panchayat",
+		wardNumber: "Ward verification pending",
 		status: "not_verified",
 		verificationStatus: "OUTSIDE MUNICIPALITY",
 		confidence: "none",
@@ -13652,7 +13652,7 @@ var WardBoundaryService = class {
 			datasetVersion: "2024-Verified-v3"
 		};
 		if (!this.activeDataset || !this.activeDataset.wards || this.activeDataset.wards.length === 0) return {
-			wardNumber: "Outside Tivsa Nagar Panchayat",
+			wardNumber: "Ward verification pending",
 			status: "not_verified",
 			verificationStatus: "OUTSIDE MUNICIPALITY",
 			confidence: "none",
@@ -13674,7 +13674,7 @@ var WardBoundaryService = class {
 			}
 		} catch {}
 		if (matchingWards.length === 0) return {
-			wardNumber: "Outside Tivsa Nagar Panchayat",
+			wardNumber: "Ward verification pending",
 			status: "not_verified",
 			verificationStatus: "OUTSIDE MUNICIPALITY",
 			confidence: "none",
@@ -13952,9 +13952,9 @@ var GpsService = class {
 			loc.wardNumber = wardMatch.wardNumber;
 			loc.wardMatchResult = wardMatch;
 		} else {
-			loc.wardNumber = "Ward Not Verified";
+			loc.wardNumber = "Ward verification pending";
 			loc.wardMatchResult = {
-				wardNumber: "Ward Not Verified",
+				wardNumber: "Ward verification pending",
 				status: "not_verified",
 				verificationStatus: "UNVERIFIED",
 				confidence: "none"
@@ -14134,12 +14134,37 @@ var GpsService = class {
 			} catch {}
 			const isVerifiedPin = !!verifiedPin;
 			const pinCode = verifiedPin || "Unavailable";
-			const streetPart = [buildingOrHouse, road].filter(Boolean).join(", ");
-			const townPart = [area, localityOrVillage && localityOrVillage !== area ? localityOrVillage : ""].filter(Boolean).join(", ");
+			const isInsideTivsaArea = lat >= 21.06 && lat <= 21.13 && lng >= 78.03 && lng <= 78.095;
+			let finalBuilding = buildingOrHouse;
+			let finalRoad = road;
+			let finalLocality = localityOrVillage;
+			let finalArea = area;
+			let finalTaluka = taluka;
+			let finalDistrict = district;
+			let finalState = state;
+			let finalPin = isInsideTivsaArea ? "444903" : pinCode;
+			let finalIsVerifiedPin = isInsideTivsaArea || isVerifiedPin;
+			if (isInsideTivsaArea) {
+				finalTaluka = "Tivsa";
+				finalDistrict = "Amravati";
+				finalState = "Maharashtra";
+				finalPin = "444903";
+				finalIsVerifiedPin = true;
+				if (localityOrVillage && localityOrVillage.toLowerCase().includes("satar") || area && area.toLowerCase().includes("satar") || road && road.toLowerCase().includes("satar") || data.display_name && data.display_name.toLowerCase().includes("satar") || lat >= 21.092 && lat <= 21.118 && lng >= 78.055 && lng <= 78.075) {
+					finalRoad = finalRoad ? `${finalRoad} (Satar Gaon Road)` : "Satar Gaon Road (Chandur Bazar Road)";
+					finalArea = "Anandwadi, Tivsa Nagar Panchayat";
+					finalLocality = "Tivsa";
+				} else if (!finalArea || finalArea.toLowerCase().includes("unnamed") || finalArea.toLowerCase().includes("satargaon")) {
+					finalArea = "Tivsa Nagar Panchayat";
+					finalLocality = "Tivsa";
+				}
+			}
+			const streetPart = [finalBuilding, finalRoad].filter(Boolean).join(", ");
+			const townPart = [finalArea, finalLocality && finalLocality !== finalArea ? finalLocality : ""].filter(Boolean).join(", ");
 			const adminPart = [
-				taluka && taluka !== district ? `Taluka: ${taluka}` : "",
-				district,
-				`${state} ${isVerifiedPin ? pinCode : ""}`
+				finalTaluka && finalTaluka !== finalDistrict ? `Taluka: ${finalTaluka}` : "",
+				finalDistrict,
+				`${finalState} ${finalIsVerifiedPin ? finalPin : ""}`
 			].filter(Boolean).join(", ");
 			const result = {
 				fullAddress: [
@@ -14148,16 +14173,16 @@ var GpsService = class {
 					adminPart,
 					country
 				].filter(Boolean).join(", "),
-				buildingOrHouse,
-				road,
-				localityOrVillage,
-				area,
-				taluka,
-				district,
-				state,
-				pinCode,
+				buildingOrHouse: finalBuilding,
+				road: finalRoad,
+				localityOrVillage: finalLocality,
+				area: finalArea,
+				taluka: finalTaluka,
+				district: finalDistrict,
+				state: finalState,
+				pinCode: finalPin,
 				country,
-				isVerifiedPin,
+				isVerifiedPin: finalIsVerifiedPin,
 				resolvedAt: Date.now()
 			};
 			await dbService.setCachedAddress(lat, lng, result);
@@ -14731,6 +14756,7 @@ var VoiceService = class {
 		this.volume = 1;
 		this.synth = null;
 		this.hasPlayedWelcomeSession = false;
+		this.welcomeAudioElement = null;
 		if (typeof window !== "undefined" && "speechSynthesis" in window) {
 			this.synth = window.speechSynthesis;
 			if (typeof window.speechSynthesis.onvoiceschanged !== "undefined") window.speechSynthesis.onvoiceschanged = () => {
@@ -14784,24 +14810,62 @@ var VoiceService = class {
 		} catch {}
 	}
 	/**
-	* Play the official English welcome message: "Welcome to Sumit Boss."
+	* Play the official AI neural Marathi welcome message:
+	* "सुमित बॉस ॲप्लिकेशनमध्ये आपले स्वागत आहे."
 	* Guaranteed to play once per app launch session.
+	* Completely replaces standard robotic Google Text-to-Speech with studio-grade neural AI audio.
 	*/
 	async announceWelcomeOnLaunch(force = false) {
 		if (!this.enabled) return;
+		try {
+			if (typeof window !== "undefined" && window.sessionStorage) {
+				if (window.sessionStorage.getItem("sumit_boss_welcome_played") === "true" && !force) return;
+			}
+		} catch {}
+		if (this.hasPlayedWelcomeSession && !force) return;
 		if (Capacitor.isNativePlatform()) try {
 			const result = await SumitVoice.playWelcome({ force });
 			if (result && result.alreadyPlayed && !force) return;
 			this.hasPlayedWelcomeSession = true;
+			try {
+				window.sessionStorage?.setItem("sumit_boss_welcome_played", "true");
+			} catch {}
 			return;
 		} catch (e) {
-			console.warn("Native welcome voice failed, attempting web fallback:", e);
+			console.warn("Native SumitVoice plugin playWelcome error:", e);
 		}
-		if (this.hasPlayedWelcomeSession && !force) return;
 		this.hasPlayedWelcomeSession = true;
-		this.speak("Welcome to Sumit Boss.", "en");
+		try {
+			window.sessionStorage?.setItem("sumit_boss_welcome_played", "true");
+		} catch {}
+		const playWebAudio = () => {
+			try {
+				if (!this.welcomeAudioElement) {
+					this.welcomeAudioElement = new Audio("/assets/audio/welcome_marathi.wav");
+					this.welcomeAudioElement.preload = "auto";
+				}
+				this.welcomeAudioElement.volume = this.volume;
+				this.welcomeAudioElement.currentTime = 0;
+				const playPromise = this.welcomeAudioElement.play();
+				if (playPromise !== void 0) playPromise.catch((err) => {
+					console.debug("Autoplay policy prevented instant audio play, queuing for first user touch:", err);
+					const triggerOnInteraction = () => {
+						this.welcomeAudioElement?.play().catch(() => {});
+						window.removeEventListener("pointerdown", triggerOnInteraction);
+						window.removeEventListener("click", triggerOnInteraction);
+						window.removeEventListener("touchstart", triggerOnInteraction);
+					};
+					window.addEventListener("pointerdown", triggerOnInteraction, { once: true });
+					window.addEventListener("click", triggerOnInteraction, { once: true });
+					window.addEventListener("touchstart", triggerOnInteraction, { once: true });
+				});
+			} catch (audioErr) {
+				console.warn("HTML5 Audio playback error:", audioErr);
+			}
+		};
+		playWebAudio();
 	}
-	announceEvent(event, lang = "en", forceManual = false) {
+	announceEvent(event, lang = "mr", forceManual = false) {
 		if (event === "welcome") {
 			this.announceWelcomeOnLaunch(forceManual);
 			return;
@@ -16157,13 +16221,14 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 };
 //#endregion
 //#region node_modules/@capacitor/filesystem/dist/esm/index.js
-var Filesystem = registerPlugin("Filesystem", { web: () => __vitePreload(() => import("./web-CJEor6Px.js").then((m) => new m.FilesystemWeb()), []) });
+var Filesystem = registerPlugin("Filesystem", { web: () => __vitePreload(() => import("./web-8cgVgzqT.js").then((m) => new m.FilesystemWeb()), []) });
 f();
 //#endregion
 //#region node_modules/@capacitor/share/dist/esm/index.js
-var Share = registerPlugin("Share", { web: () => __vitePreload(() => import("./web-B8bk_uwa.js").then((m) => new m.ShareWeb()), []) });
+var Share = registerPlugin("Share", { web: () => __vitePreload(() => import("./web-ByQYzBpf.js").then((m) => new m.ShareWeb()), []) });
 //#endregion
 //#region src/services/photoExportService.ts
+var ImageStampModule = registerPlugin("ImageStampModule");
 var SumitMedia = registerPlugin("SumitMedia");
 var PhotoExportService = class {
 	/**
@@ -16172,11 +16237,9 @@ var PhotoExportService = class {
 	* camera Android Bitmap using native Canvas, Paint, and subpixel text rendering.
 	*/
 	static async stampAndSaveNative(options) {
-		const cleanBase64 = this.extractBase64(options.rawBase64);
-		const safeFilename = options.filename.endsWith(".jpg") || options.filename.endsWith(".jpeg") ? options.filename : `${options.filename}.jpg`;
-		const res = await SumitMedia.stampAndSavePhoto({
-			base64: cleanBase64,
-			filename: safeFilename,
+		const stampPayload = {
+			base64: this.extractBase64(options.rawBase64),
+			filename: options.filename.endsWith(".jpg") || options.filename.endsWith(".jpeg") ? options.filename : `${options.filename}.jpg`,
 			addressText: options.addressText,
 			wardNumber: options.wardNumber,
 			wardName: options.wardName || "",
@@ -16184,8 +16247,35 @@ var PhotoExportService = class {
 			pinCodeText: options.pinCodeText,
 			dateText: options.dateText,
 			timeText: options.timeText,
-			mapTileBase64: options.mapTileBase64 ? this.extractBase64(options.mapTileBase64) : null
-		});
+			latitude: options.latitude,
+			longitude: options.longitude,
+			mapTileBase64: options.mapTileBase64 ? this.extractBase64(options.mapTileBase64) : null,
+			gpsData: {
+				addressText: options.addressText,
+				wardNumber: options.wardNumber,
+				wardName: options.wardName || "",
+				gpsCoordsText: options.gpsCoordsText,
+				pinCodeText: options.pinCodeText,
+				dateText: options.dateText,
+				timeText: options.timeText,
+				latitude: options.latitude,
+				longitude: options.longitude,
+				mapTileBase64: options.mapTileBase64 ? this.extractBase64(options.mapTileBase64) : null
+			}
+		};
+		try {
+			const res = await ImageStampModule.stampAndSavePhoto(stampPayload);
+			if (res && res.success && res.stampedDataUrl) return {
+				success: true,
+				stampedDataUrl: res.stampedDataUrl,
+				message: res.message || "Photo stamped with native HD typography via ImageStampModule.",
+				uri: res.uri,
+				filePath: res.filePath
+			};
+		} catch (pluginErr) {
+			console.warn("ImageStampModule call failed, falling back to SumitMedia:", pluginErr);
+		}
+		const res = await SumitMedia.stampAndSavePhoto(stampPayload);
 		if (!res || !res.success || !res.stampedDataUrl) throw new Error(res?.message || "Native photo stamping failed");
 		return {
 			success: true,
@@ -16386,7 +16476,7 @@ var CameraView = ({ language, location, address, settings, onRefreshGps, onPhoto
 	const [exportFeedback, setExportFeedback] = (0, import_react.useState)(null);
 	const [isRefreshingGps, setIsRefreshingGps] = (0, import_react.useState)(false);
 	const [detectedWardResult, setDetectedWardResult] = (0, import_react.useState)({
-		wardNumber: "Ward Not Verified",
+		wardNumber: "Ward verification pending",
 		status: "not_verified",
 		verificationStatus: "UNVERIFIED",
 		confidence: "none"
@@ -16396,7 +16486,7 @@ var CameraView = ({ language, location, address, settings, onRefreshGps, onPhoto
 			const match = wardBoundaryService.detectWard(location.latitude, location.longitude, location.accuracy);
 			setDetectedWardResult(match);
 		} else setDetectedWardResult({
-			wardNumber: "Ward Not Verified",
+			wardNumber: "Ward verification pending",
 			status: "not_verified",
 			verificationStatus: "UNVERIFIED",
 			confidence: "none"
@@ -16557,7 +16647,9 @@ var CameraView = ({ language, location, address, settings, onRefreshGps, onPhoto
 					gpsCoordsText,
 					pinCodeText,
 					dateText: dateStr,
-					timeText: timeStr
+					timeText: timeStr,
+					latitude: fallbackLocation.latitude,
+					longitude: fallbackLocation.longitude
 				})).stampedDataUrl;
 			} catch (nativeErr) {
 				console.warn("Native Android stamp fallback to high-resolution web canvas renderer:", nativeErr);
@@ -24312,6 +24404,13 @@ var GoogleMapView = ({ language, location, photos, onOpenCamera }) => {
 								photos.length,
 								")"
 							] })]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("a", {
+							href: `https://www.google.com/maps/search/?api=1&query=${userLat},${userLng}`,
+							target: "_blank",
+							rel: "noopener noreferrer",
+							className: "px-3 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-md transition-all border border-emerald-500/50",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Navigation, { className: "w-3.5 h-3.5 text-emerald-200" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Open in Google Maps" })]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 							onClick: onOpenCamera,

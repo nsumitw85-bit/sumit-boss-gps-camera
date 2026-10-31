@@ -103,9 +103,9 @@ export class GpsService {
       loc.wardNumber = wardMatch.wardNumber;
       loc.wardMatchResult = wardMatch;
     } else {
-      loc.wardNumber = 'Ward Not Verified';
+      loc.wardNumber = 'Ward verification pending';
       loc.wardMatchResult = {
-        wardNumber: 'Ward Not Verified',
+        wardNumber: 'Ward verification pending',
         status: 'not_verified',
         verificationStatus: 'UNVERIFIED',
         confidence: 'none',
@@ -352,10 +352,49 @@ export class GpsService {
       const isVerifiedPin = !!verifiedPin;
       const pinCode = verifiedPin || 'Unavailable';
 
+      // Tivsa Nagar Panchayat boundary envelope
+      const isInsideTivsaArea = (lat >= 21.060 && lat <= 21.130 && lng >= 78.030 && lng <= 78.095);
+
+      let finalBuilding = buildingOrHouse;
+      let finalRoad = road;
+      let finalLocality = localityOrVillage;
+      let finalArea = area;
+      let finalTaluka = taluka;
+      let finalDistrict = district;
+      let finalState = state;
+      let finalPin = isInsideTivsaArea ? '444903' : pinCode;
+      let finalIsVerifiedPin = isInsideTivsaArea || isVerifiedPin;
+
+      if (isInsideTivsaArea) {
+        finalTaluka = 'Tivsa';
+        finalDistrict = 'Amravati';
+        finalState = 'Maharashtra';
+        finalPin = '444903';
+        finalIsVerifiedPin = true;
+
+        // Clean up unrelated village names like Satargaon (which is 4-5km north, connected via Satar Gaon Road)
+        const isSatarGaonCorridor = (
+          (localityOrVillage && localityOrVillage.toLowerCase().includes('satar')) ||
+          (area && area.toLowerCase().includes('satar')) ||
+          (road && road.toLowerCase().includes('satar')) ||
+          (data.display_name && data.display_name.toLowerCase().includes('satar')) ||
+          (lat >= 21.092 && lat <= 21.118 && lng >= 78.055 && lng <= 78.075)
+        );
+
+        if (isSatarGaonCorridor) {
+          finalRoad = finalRoad ? `${finalRoad} (Satar Gaon Road)` : 'Satar Gaon Road (Chandur Bazar Road)';
+          finalArea = 'Anandwadi, Tivsa Nagar Panchayat';
+          finalLocality = 'Tivsa';
+        } else if (!finalArea || finalArea.toLowerCase().includes('unnamed') || finalArea.toLowerCase().includes('satargaon')) {
+          finalArea = 'Tivsa Nagar Panchayat';
+          finalLocality = 'Tivsa';
+        }
+      }
+
       // Build formatted multi-line address:
-      const streetPart = [buildingOrHouse, road].filter(Boolean).join(', ');
-      const townPart = [area, localityOrVillage && localityOrVillage !== area ? localityOrVillage : ''].filter(Boolean).join(', ');
-      const adminPart = [taluka && taluka !== district ? `Taluka: ${taluka}` : '', district, `${state} ${isVerifiedPin ? pinCode : ''}`].filter(Boolean).join(', ');
+      const streetPart = [finalBuilding, finalRoad].filter(Boolean).join(', ');
+      const townPart = [finalArea, finalLocality && finalLocality !== finalArea ? finalLocality : ''].filter(Boolean).join(', ');
+      const adminPart = [finalTaluka && finalTaluka !== finalDistrict ? `Taluka: ${finalTaluka}` : '', finalDistrict, `${finalState} ${finalIsVerifiedPin ? finalPin : ''}`].filter(Boolean).join(', ');
 
       const formattedLines = [
         streetPart || townPart || `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
@@ -368,16 +407,16 @@ export class GpsService {
 
       const result: AddressData = {
         fullAddress,
-        buildingOrHouse,
-        road,
-        localityOrVillage,
-        area,
-        taluka,
-        district,
-        state,
-        pinCode,
+        buildingOrHouse: finalBuilding,
+        road: finalRoad,
+        localityOrVillage: finalLocality,
+        area: finalArea,
+        taluka: finalTaluka,
+        district: finalDistrict,
+        state: finalState,
+        pinCode: finalPin,
         country,
-        isVerifiedPin,
+        isVerifiedPin: finalIsVerifiedPin,
         resolvedAt: Date.now(),
       };
 
