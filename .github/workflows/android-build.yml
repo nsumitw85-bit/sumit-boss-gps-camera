@@ -33,11 +33,11 @@ jobs:
       - name: Build Web Application
         run: npm run build
 
-      - name: Setup Java JDK 17
+      - name: Setup Java JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
           cache: 'gradle'
 
       - name: Synchronize Capacitor Android Project
@@ -48,7 +48,7 @@ jobs:
 
       - name: Build Android Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --warning-mode all
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Inspect & Rename Output APKs
         run: |
