@@ -36,9 +36,6 @@ import java.util.List;
  * ImageStampModule - Custom Native Android Capacitor Plugin.
  * High-Resolution Canvas Rendering Engine that composites the GPS information panel
  * directly onto the original full-resolution camera Android Bitmap.
- *
- * Avoids all WebView/preview scaling bottlenecks and ensures all text, icons,
- * and map thumbnails are rendered at the exact output resolution of the camera sensor.
  */
 @CapacitorPlugin(name = "ImageStampModule")
 public class ImageStampModule extends Plugin {
@@ -66,8 +63,8 @@ public class ImageStampModule extends Plugin {
         String timeText = gpsData != null ? gpsData.getString("timeText", "") : call.getString("timeText", "");
         String mapTileBase64 = gpsData != null ? gpsData.getString("mapTileBase64", null) : call.getString("mapTileBase64", null);
 
-        Double latitude = gpsData != null ? gpsData.getDouble("latitude") : call.getDouble("latitude", 21.088);
-        Double longitude = gpsData != null ? gpsData.getDouble("longitude") : call.getDouble("longitude", 78.064);
+        Double latitude = gpsData != null ? gpsData.optDouble("latitude", 21.088) : call.getDouble("latitude", 21.088);
+        Double longitude = gpsData != null ? gpsData.optDouble("longitude", 78.064) : call.getDouble("longitude", 78.064);
 
         if ((base64Data == null || base64Data.trim().isEmpty()) && (photoPath == null || photoPath.trim().isEmpty())) {
             call.reject("Neither base64 nor photoPath was provided.");
