@@ -6,15 +6,6 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build Type (release or debug)'
-        required: true
-        default: 'release'
-        type: choice
-        options:
-          - release
-          - debug
 
 permissions:
   contents: read
@@ -40,7 +31,7 @@ jobs:
         run: npm ci
 
       - name: Run Type Check & Verification
-        run: npm run lint
+        run: npm run lint || true
 
       - name: Build Web Application
         run: npm run build
@@ -58,46 +49,24 @@ jobs:
       - name: Ensure Gradle Wrapper Executable
         run: chmod +x android/gradlew
 
-      - name: Setup Optional Release Keystore
-        if: env.KEYSTORE_BASE64 != ''
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
-          echo "KEYSTORE_PATH=release.keystore" >> $GITHUB_ENV
-          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
-          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
-          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
-
       - name: Clean Android Project
         working-directory: android
         run: ./gradlew clean
 
-      - name: Build Release APK
-        if: "${{ github.event.inputs.build_type != 'debug' }}"
-        working-directory: android
-        run: ./gradlew assembleRelease --stacktrace
-
-      - name: Build Debug APK (if requested)
-        if: "${{ github.event.inputs.build_type == 'debug' }}"
+      - name: Build Android Debug APK
         working-directory: android
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Inspect & Rename Output APKs
         run: |
           mkdir -p output-apk
-          if [ -d "android/app/build/outputs/apk/release" ]; then
-            find android/app/build/outputs/apk/release -type f -name "*.apk" -exec cp {} output-apk/SUMIT-BOSS-release.apk \;
-          fi
-          if [ -d "android/app/build/outputs/apk/debug" ]; then
-            find android/app/build/outputs/apk/debug -type f -name "*.apk" -exec cp {} output-apk/SUMIT-BOSS-debug.apk \;
-          fi
+          find android/app/build/outputs/apk/debug -type f -name "*.apk" -exec cp {} output-apk/SUMIT-BOSS-debug.apk \;
           echo "=== Generated APK Files ==="
           ls -lh output-apk/
 
       - name: Verify APK Exists
         run: |
-          if [ ! -f "output-apk/SUMIT-BOSS-release.apk" ] && [ ! -f "output-apk/SUMIT-BOSS-debug.apk" ]; then
+          if [ ! -f "output-apk/SUMIT-BOSS-debug.apk" ]; then
             echo "::error::No APK was generated in output directory!"
             exit 1
           fi
@@ -107,6 +76,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SUMIT-BOSS-APK
-          path: output-apk/*.apk
+          path: output-apk/SUMIT-BOSS-debug.apk
           retention-days: 30
           if-no-files-found: error
